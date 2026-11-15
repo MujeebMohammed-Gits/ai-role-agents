@@ -73,11 +73,13 @@ export function renderMarkdown(text) {
   // Mermaid code blocks become placeholders that are rendered as SVG once the
   // stream closes (see renderMermaidDiagrams / MessageBubble).
   const originalCode = renderer.code;
-  renderer.code = function (code, language) {
-    if (language != null && String(language).trim().toLowerCase() === 'mermaid') {
-      return `<div class="mermaid-placeholder"><div class="mermaid-loading">Rendering workflow diagram...</div><div class="mermaid-source">${escapeHtml(code)}</div></div>`;
+  renderer.code = function (codeOrToken, language) {
+    const rawCode = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.text : codeOrToken;
+    const rawLang = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.lang : language;
+    if (rawLang != null && String(rawLang).trim().toLowerCase() === 'mermaid') {
+      return `<div class="mermaid-placeholder"><div class="mermaid-loading">Rendering workflow diagram...</div><div class="mermaid-source">${escapeHtml(rawCode)}</div></div>`;
     }
-    return originalCode.call(this, code, language);
+    return originalCode.apply(this, arguments);
   };
 
   let html = marked.parse(text, {
