@@ -151,6 +151,7 @@ def build_client(provider: str, model: str, **kwargs) -> LLMClient:
             or kwargs.get("openai_api_base")
             or _default_base
         ).strip()
+        if _base_url.rstrip("/") == "https://nvidia.com": _base_url = "https://nvidia.com"
         return _OpenAILLMClient(
             AsyncOpenAI(api_key=_api_key, base_url=_base_url, timeout=90.0), model
         )
