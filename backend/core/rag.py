@@ -258,7 +258,7 @@ class RAGContext:
         if not qdrant_url:
             return []
         try:
-            query_embedding = await self._embed_query_hf_api(query)[0]
+            query_embedding = await self._embed_query_hf_api(query)
             headers = {"Content-Type": "application/json"}
             if qdrant_key:
                 headers["api-key"] = qdrant_key
@@ -313,7 +313,7 @@ class RAGContext:
         if self._collection is None:
             return []
         try:
-            query_embedding = await self._embed_query_hf_api(query)[0]
+            query_embedding = await self._embed_query_hf_api(query)
             count = self._collection.count()
             n_results = min(k, count) if count else k
             if n_results <= 0:
