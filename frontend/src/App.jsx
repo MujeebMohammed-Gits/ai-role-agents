@@ -105,8 +105,8 @@ function MessageBubble({ message, isAgent }) {
   const tailClass = isUser ? 'rounded-tr-none' : 'rounded-tl-none';
 
   return (
-    <div className={`flex ${alignClass} ${isUser ? "max-w-2xl" : "w-full"} mb-4 fade-in slide-up`}>
-      <div ref={bubbleRef} style={isUser ? undefined : { width: "100%", maxWidth: "100%" }} className={`message-bubble ${base} ${tailClass}`}>
+    <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"} mb-3 fade-in slide-up`}>
+      <div ref={bubbleRef} style={isUser ? { maxWidth: "72%" } : { width: "100%", maxWidth: "100%" }} className={`message-bubble ${base} ${tailClass}`}>
           {isAgent && meta && (
           <div className="flex items-center gap-2 mb-2">
             <div className={`w-6 h-6 rounded-full flex items-center justify-center bg-${meta.color}-100 text-${meta.color}-600`}>
@@ -163,7 +163,7 @@ function MessageBubble({ message, isAgent }) {
 
 function ConversationThread({ messages }) {
   return (
-    <div className="h-full overflow-y-auto pl-6 pr-8 py-6 space-y-6">
+    <div className="h-full overflow-y-auto px-6 py-6 space-y-4">
       {messages.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full text-muted">
           <MessageCircle size={48} className="mb-3 opacity-50" />

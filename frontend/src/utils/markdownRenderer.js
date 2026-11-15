@@ -7,8 +7,8 @@ mermaid.initialize({
   theme: 'default',
   suppressErrorRendering: true,
   securityLevel: 'loose',
-  themeVariables: { fontSize: '12px' },
-  flowchart: { nodeSpacing: 24, rankSpacing: 28, padding: 8, useMaxWidth: true },
+  themeVariables: { fontSize: '13px' },
+  flowchart: { nodeSpacing: 32, rankSpacing: 36, padding: 12, useMaxWidth: false },
 });
 
 function escapeHtml(unsafe) {
@@ -129,15 +129,47 @@ export function renderMermaidDiagrams(container) {
     const id = 'mermaid-' + Math.random().toString(36).slice(2, 9);
     mermaid.render(id, source).then(({ svg }) => {
       placeholder.dataset.rendered = 'true';
-      placeholder.innerHTML = svg;
+      placeholder.innerHTML = `
+        <div class="mermaid-toolbar">
+          <span class="mermaid-badge">Workflow Diagram</span>
+          <div class="mermaid-zoom-controls">
+            <button type="button" class="mermaid-zoom-btn" data-action="out" title="Zoom out">?</button>
+            <span class="mermaid-zoom-level">100%</span>
+            <button type="button" class="mermaid-zoom-btn" data-action="in" title="Zoom in">+</button>
+            <button type="button" class="mermaid-zoom-btn" data-action="reset" title="Reset zoom">Reset</button>
+          </div>
+        </div>
+        <div class="mermaid-viewport">
+          <div class="mermaid-canvas">${svg}</div>
+        </div>
+      `;
       const svgEl = placeholder.querySelector('svg');
+      const canvas = placeholder.querySelector('.mermaid-canvas');
+      const label = placeholder.querySelector('.mermaid-zoom-level');
       if (svgEl) {
         svgEl.removeAttribute('style');
-        svgEl.style.maxHeight = '280px';
-        svgEl.style.width = 'auto';
-        svgEl.style.maxWidth = '100%';
+        svgEl.style.maxWidth = 'none';
         svgEl.style.height = 'auto';
+        svgEl.style.display = 'block';
+        svgEl.style.margin = '0 auto';
       }
+      let scale = 1.0;
+      const applyZoom = () => {
+        if (canvas) {
+          canvas.style.transform = `scale(${scale})`;
+          canvas.style.transformOrigin = 'top left';
+        }
+        if (label) label.textContent = `${Math.round(scale * 100)}%`;
+      };
+      placeholder.querySelectorAll('.mermaid-zoom-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const action = btn.getAttribute('data-action');
+          if (action === 'in') scale = Math.min(2.2, +(scale + 0.2).toFixed(2));
+          else if (action === 'out') scale = Math.max(0.5, +(scale - 0.2).toFixed(2));
+          else scale = 1.0;
+          applyZoom();
+        });
+      });
       placeholder.classList.add('mermaid-rendered');
     }).catch((err) => {
       console.error('[mermaid] render failed:', err);
