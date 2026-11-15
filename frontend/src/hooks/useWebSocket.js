@@ -1,65 +1,50 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
-// Configurable WebSocket backend base URL. Defaults to the FastAPI backend
-// running locally on port 8000; override with VITE_WS_BASE_URL when the
-// frontend is served from a different host (e.g. production).
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
-
-export function useWebSocket(url, onMessage) {
-  const cbRef = useRef(onMessage);
-  const wsRef = useRef(null);
+export function useWebSocket(path, onMessage) {
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
 
   useEffect(() => {
-    cbRef.current = onMessage;
-  }, [onMessage]);
+    if (!path) return;
+    let ws;
+    let closed = false;
+    let retryTimer;
 
-  useEffect(() => {
-    if (!url) return;
-    // Resolve relative paths (e.g. "/api/ws/logs") against the backend base URL
-    // so the client connects directly to the FastAPI backend instead of the
-    // Vite dev port, which does not proxy WebSocket traffic.
-    const resolvedUrl =
-      url.startsWith('ws://') || url.startsWith('wss://')
-        ? url
-        : `${WS_BASE_URL}${url}`;
-    const ws = new WebSocket(resolvedUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('[ws] connected to log stream');
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        cbRef.current(JSON.parse(event.data));
-      } catch (err) {
-        console.warn('[ws] failed to parse message', err);
+    const connect = () => {
+      const apiBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+      let wsUrl;
+      if (apiBase) {
+        const u = new URL(apiBase);
+        const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${proto}//${u.host}${path}`;
+      } else {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${proto}//${window.location.host}${path}`;
       }
+
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          onMessageRef.current?.(data);
+        } catch (err) {
+          console.warn('WebSocket parse error:', err);
+        }
+      };
+      ws.onclose = () => {
+        if (!closed) {
+          retryTimer = setTimeout(connect, 3000);
+        }
+      };
     };
 
-    ws.onclose = () => {
-      console.log('[ws] log stream closed');
-      wsRef.current = null;
-    };
-
-    ws.onerror = (err) => {
-      console.warn('[ws] log stream error', err);
-    };
-
+    connect();
     return () => {
+      closed = true;
+      clearTimeout(retryTimer);
       if (ws) ws.close();
-      wsRef.current = null;
     };
-  }, [url]);
-
-  const send = useCallback((data) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
-    }
-  }, []);
-
-  const connected =
-    wsRef.current != null && wsRef.current.readyState === WebSocket.OPEN;
-
-  return { send, connected };
+  }, [path]);
 }
+
+export default useWebSocket;
