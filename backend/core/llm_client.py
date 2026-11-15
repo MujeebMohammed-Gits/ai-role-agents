@@ -206,13 +206,17 @@ class _OpenAILLMClient(LLMClient):
         full_messages = [{"role": "system", "content": system_prompt}] + [
             m for m in messages if m.get("role") != "system"
         ]
-        stream = await self._client.chat.completions.create(
-            model=self._model,
-            messages=full_messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
+        try:
+            stream = await self._client.chat.completions.create(
+                model=self._model,
+                messages=full_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+        except Exception as exc:
+            cause = getattr(exc, "__cause__", None) or exc
+            raise RuntimeError(f"LLM API failed ({self._client.base_url} | model={self._model}): {type(cause).__name__}: {cause}") from exc
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content

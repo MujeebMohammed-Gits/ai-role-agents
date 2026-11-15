@@ -294,7 +294,7 @@ class RAGContext:
                     )
                 return docs
         except Exception as exc:
-            logger.exception("Qdrant retrieve failed: %s", exc)
+            logger.warning("Qdrant/HF retrieve skipped (%s): %s", type(exc).__name__, exc)
             if emitter is not None:
                 await emitter.rag_retrieve(score=None, data={"query": query, "error": str(exc)})
             return []
