@@ -1,0 +1,20 @@
+﻿.env
+*.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+node_modules/
+frontend/dist/
+.DS_Store
+
+# Local Windows launcher script
+run_local.bat
+
+# Exclude heavy local knowledge & vector index folders
+source-docs/*
+!source-docs/.gitkeep
+backend/chroma_db/
+backend/chroma/
+chroma_db/
+chroma/

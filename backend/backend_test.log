@@ -1,0 +1,52 @@
+INFO:     Started server process [6884]
+INFO:     Waiting for application startup.
+2026-11-12 14:58:11,895 | INFO     | orchestrator | Registered agent: Delivery Management (delivery_management)
+2026-11-12 14:58:11,897 | INFO     | orchestrator | Registered agent: Enterprise Agile Coach (enterprise_agile_coach)
+2026-11-12 14:58:11,897 | INFO     | orchestrator | Registered agent: Scrum Master (scrum_master)
+2026-11-12 14:58:11,897 | INFO     | orchestrator | Registered agent: Product Manager (product_manager)
+2026-11-12 14:58:11,899 | INFO     | orchestrator | Registered agent: Product Owner (product_owner)
+2026-11-12 14:58:11,899 | INFO     | orchestrator | Registered agent: Business Analyst (business_analyst)
+2026-11-12 14:58:11,899 | INFO     | orchestrator | Registered agent: User Research (user_research)
+2026-11-12 14:58:11,899 | INFO     | orchestrator | Registered agent: Devops Engineer (devops_engineer)
+2026-11-12 14:58:11,899 | INFO     | orchestrator | Registered agent: Sre (sre)
+2026-11-12 14:58:11,901 | INFO     | orchestrator | Registered agent: Platform Engineering (platform_engineering)
+2026-11-12 14:58:11,901 | INFO     | orchestrator | Registered agent: Programme Manager (programme_manager)
+2026-11-12 14:58:11,901 | INFO     | orchestrator | Registered agent: Management Consultant (management_consultant)
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Delivery Management (delivery_management) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Enterprise Agile Coach (enterprise_agile_coach) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Scrum Master (scrum_master) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Product Manager (product_manager) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Product Owner (product_owner) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Business Analyst (business_analyst) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent User Research (user_research) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Devops Engineer (devops_engineer) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Sre (sre) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Platform Engineering (platform_engineering) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Programme Manager (programme_manager) started
+2026-11-12 14:58:11,901 | INFO     | agents.base | Agent Management Consultant (management_consultant) started
+2026-11-12 14:58:11,901 | INFO     | orchestrator | Orchestrator started 12 agents (RAG seeding in background)
+2026-11-12 14:58:11,901 | INFO     | main | Multi-agent mesh is always-on with 12 agents
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-11-12 14:58:12,338 | INFO     | ingestion.frameworks | Loaded 1 Applying SAFe 6.0 to Accelerate Business Agility Workshop One Pager.pdf (1786 chars)
+2026-11-12 14:58:12,794 | INFO     | ingestion.frameworks | Loaded 2020-Scrum-Guide-US.pdf (30136 chars)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 8 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 10 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 12 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 14 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 16 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 18 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 20 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 32 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 34 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 36 0 (offset 0)
+2026-11-12 14:58:12,796 | WARNING  | pypdf._reader | Ignoring wrong pointing object 38 0 (offset 0)
+2026-11-12 14:58:12,798 | WARNING  | pypdf._reader | Ignoring wrong pointing object 40 0 (offset 0)
+2026-11-12 14:58:12,798 | WARNING  | pypdf._reader | Ignoring wrong pointing object 47 0 (offset 0)
+2026-11-12 14:58:12,798 | WARNING  | pypdf._reader | Ignoring wrong pointing object 49 0 (offset 0)
+2026-11-12 14:58:12,798 | WARNING  | pypdf._reader | Ignoring wrong pointing object 51 0 (offset 0)
+2026-11-12 14:58:12,798 | WARNING  | pypdf._reader | Ignoring wrong pointing object 58 0 (offset 0)
+2026-11-12 14:58:12,798 | WARNING  | pypdf._reader | Ignoring wrong pointing object 60 0 (offset 0)
+2026-11-12 14:58:13,224 | INFO     | ingestion.frameworks | Loaded 2021 Kanban Guide.pdf (21179 chars)
+2026-11-12 14:58:19,160 | INFO     | ingestion.frameworks | Loaded Agile Change Management A Practical Framework for Successful Change Planning and Implementation by Franklin, Melanie. (z-lib.org).pdf (515990 chars)
+INFO:     127.0.0.1:60733 - "GET /api/agents HTTP/1.1" 200 OK
