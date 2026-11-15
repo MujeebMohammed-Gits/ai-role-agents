@@ -192,6 +192,28 @@ class _OpenAILLMClient(LLMClient):
         return resp.choices[0].message.content or ""
 
 
+
+    async def stream_complete(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ):
+        full_messages = [{"role": "system", "content": system_prompt}] + [
+            m for m in messages if m.get("role") != "system"
+        ]
+        stream = await self._client.chat.completions.create(
+            model=self._model,
+            messages=full_messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
 class _AnthropicLLMClient(LLMClient):
     def __init__(self, client: object, model: str) -> None:
         self._client = client
