@@ -143,14 +143,16 @@ def build_client(provider: str, model: str, **kwargs) -> LLMClient:
                 "openai package not installed; `pip install openai` or use LLM_PROVIDER=mock"
             ) from exc
         import os
+        _api_key = (kwargs.get("openai_api_key") or os.environ.get("OPENAI_API_KEY") or "proxy").strip()
+        _default_base = "https://nvidia.com" if _api_key.startswith("nvapi-") else "http://localhost:8082/v1"
         _base_url = (
-            os.environ.get("OPENAI_API_BASE")
-            or os.environ.get("OPENAI_BASE_URL")
+            os.environ.get("OPENAI_BASE_URL")
+            or os.environ.get("OPENAI_API_BASE")
             or kwargs.get("openai_api_base")
-            or "http://localhost:8082/v1"
-        )
+            or _default_base
+        ).strip()
         return _OpenAILLMClient(
-            AsyncOpenAI(api_key=kwargs.get("openai_api_key", "proxy"), base_url=_base_url), model
+            AsyncOpenAI(api_key=_api_key, base_url=_base_url, timeout=90.0), model
         )
     if provider == "anthropic":
         try:
