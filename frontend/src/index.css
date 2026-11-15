@@ -340,3 +340,14 @@
   border: none !important;
   background: transparent !important;
 }
+
+
+/* Full-width responsive agent response bubbles with clean right-edge scrollbar margin */
+.message-agent {
+  width: 100% !important;
+  max-width: calc(100% - 0.5rem) !important;
+}
+.mermaid-rendered svg {
+  max-width: 100% !important;
+  height: auto !important;
+}

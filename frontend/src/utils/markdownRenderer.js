@@ -28,11 +28,16 @@ function sanitizeMermaid(source) {
       /([A-Za-z_][\w\-]*)\[(".*?"|'.*?'|[^\]]*)\]/g,
       (match, id, label) => {
         const isQuoted = /^["'].*['"]$/.test(label);
-        const needsQuote = /[()\[\]{}|&;<>]/.test(label);
-        if (!isQuoted && needsQuote) {
-          return `${id}["${label.replace(/"/g, '\\"')}"]`;
+        if (isQuoted) {
+          const inner = label.slice(1, -1).replace(/\\?"/g, "'");
+          return `${id}["${inner}"]`;
         }
-        return match;
+        const cleaned = label.replace(/\\?"/g, "'");
+        const needsQuote = /[()\[\]{}|&;<>']/.test(cleaned);
+        if (needsQuote) {
+          return `${id}["${cleaned}"]`;
+        }
+        return `${id}[${cleaned}]`;
       }
     );
   }).join('\n');
