@@ -61,3 +61,17 @@ if __name__ == "__main__":
         reload=settings.debug,
         log_level="info",
     )
+
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+_frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+if os.path.isdir(_frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(_frontend_dist, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if full_path.startswith("api/"):
+            return {"detail": "Not Found"}
+        return FileResponse(os.path.join(_frontend_dist, "index.html"))
