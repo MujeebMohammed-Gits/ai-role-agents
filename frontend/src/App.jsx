@@ -406,7 +406,7 @@ export default function App() {
       setConversation((prev) => [...prev, pendingMsg]);
 
       try {
-        const res = await fetch('/api/query/stream', {
+        const res = await fetch(`${API_BASE}/query/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

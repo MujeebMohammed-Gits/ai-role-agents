@@ -232,8 +232,62 @@ class RAGContext:
 
     # ------------------------------------------------------------------ reads
 
+
+    async def _retrieve_qdrant(self, query: str, k: int, emitter: Optional[TraceEmitter] = None) -> list[dict]:
+        import os, httpx
+        qdrant_url = os.environ.get("QDRANT_URL", "").rstrip("/")
+        qdrant_key = os.environ.get("QDRANT_API_KEY", "")
+        if not qdrant_url:
+            return []
+        try:
+            query_embedding = (await self._embed_texts([query]))[0]
+            headers = {"Content-Type": "application/json"}
+            if qdrant_key:
+                headers["api-key"] = qdrant_key
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{qdrant_url}/collections/{self.collection_name}/points/search",
+                    headers=headers,
+                    json={"vector": query_embedding, "limit": k, "with_payload": True},
+                )
+                if resp.status_code != 200:
+                    logger.warning("Qdrant search returned %s: %s", resp.status_code, resp.text[:200])
+                    return []
+                hits = resp.json().get("result", [])
+                docs = []
+                best_score = None
+                for h in hits:
+                    score = round(float(h.get("score", 0.0)), 4)
+                    if best_score is None or score > best_score:
+                        best_score = score
+                    payload = h.get("payload") or {}
+                    docs.append({
+                        "id": str(h.get("id", "")),
+                        "text": payload.get("text", ""),
+                        "source": payload.get("source", "knowledge_base"),
+                        "score": score,
+                        "distance": round(1.0 - score, 4),
+                        "metadata": payload,
+                    })
+                if emitter is not None:
+                    await emitter.rag_retrieve(
+                        score=best_score,
+                        data={"query": query, "top_k": k, "returned": len(docs)},
+                    )
+                return docs
+        except Exception as exc:
+            logger.exception("Qdrant retrieve failed: %s", exc)
+            if emitter is not None:
+                await emitter.rag_retrieve(score=None, data={"query": query, "error": str(exc)})
+            return []
+
     async def retrieve(self, query: str, top_k: Optional[int] = None,
                        emitter: Optional[TraceEmitter] = None) -> list[dict]:
+        import os
+        if os.environ.get("QDRANT_URL"):
+            if not self.enabled:
+                return []
+            return await self._retrieve_qdrant(query, top_k or self.top_k, emitter=emitter)
         if not self.enabled:
             return []
         self._lazy_init()
