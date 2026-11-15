@@ -7,6 +7,8 @@ mermaid.initialize({
   theme: 'default',
   suppressErrorRendering: true,
   securityLevel: 'loose',
+  themeVariables: { fontSize: '12px' },
+  flowchart: { nodeSpacing: 24, rankSpacing: 28, padding: 8, useMaxWidth: true },
 });
 
 function escapeHtml(unsafe) {
@@ -128,6 +130,14 @@ export function renderMermaidDiagrams(container) {
     mermaid.render(id, source).then(({ svg }) => {
       placeholder.dataset.rendered = 'true';
       placeholder.innerHTML = svg;
+      const svgEl = placeholder.querySelector('svg');
+      if (svgEl) {
+        svgEl.removeAttribute('style');
+        svgEl.style.maxHeight = '280px';
+        svgEl.style.width = 'auto';
+        svgEl.style.maxWidth = '100%';
+        svgEl.style.height = 'auto';
+      }
       placeholder.classList.add('mermaid-rendered');
     }).catch((err) => {
       console.error('[mermaid] render failed:', err);

@@ -106,7 +106,7 @@ function MessageBubble({ message, isAgent }) {
 
   return (
     <div className={`flex ${alignClass} ${isUser ? "max-w-2xl" : "w-full"} mb-4 fade-in slide-up`}>
-      <div ref={bubbleRef} className={`message-bubble ${base} ${tailClass}`}>
+      <div ref={bubbleRef} style={isUser ? undefined : { width: "100%", maxWidth: "100%" }} className={`message-bubble ${base} ${tailClass}`}>
           {isAgent && meta && (
           <div className="flex items-center gap-2 mb-2">
             <div className={`w-6 h-6 rounded-full flex items-center justify-center bg-${meta.color}-100 text-${meta.color}-600`}>
