@@ -97,6 +97,9 @@ class Orchestrator:
         return dict(self._agents)
 
     async def seed_rag(self) -> None:
+    import os
+    if os.environ.get("QDRANT_URL"):
+        return 0
         """Seed the RAG index only if ChromaDB has not been populated on disk yet."""
         import os
         if os.path.exists("./data/chroma/chroma.sqlite3"):
