@@ -1,3 +1,4 @@
+import { API_BASE } from './services/api';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LayoutDashboard, Bot, MessageCircle, Activity, Play, Terminal,
