@@ -42,6 +42,7 @@ class LLMClient:
         streaming should override this.
         """
         response = await self.complete(
+            system_prompt, messages, temperature=temperature, max_tokens=max_tokens
         )
         if response:
             yield response
