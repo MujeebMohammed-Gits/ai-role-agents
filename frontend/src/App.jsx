@@ -96,7 +96,7 @@ function MessageBubble({ message, isAgent }) {
   useEffect(() => {
     if (message.streaming || !bubbleRef.current) return;
     renderMermaidDiagrams(bubbleRef.current);
-  }, [message.streaming, message.rendered]);
+  }, [message.streaming, message.rendered, message.content]);
   const meta = isAgent ? AGENT_META[message.agentRole || 'delivery_management'] : null;
   const base = isUser
     ? 'bg-indigo-600 text-white'
@@ -119,11 +119,14 @@ function MessageBubble({ message, isAgent }) {
             <span className="ml-auto text-[10px] text-slate-600">{formatTime(message.ts)}</span>
           </div>
         )}
-        {message.rendered ? (
-          <div className="prose prose-sm text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: message.rendered }} />
-        ) : (
-          <span className="whitespace-pre-wrap">{message.content}</span>
-        )}
+        {(() => {
+          const html = message.rendered || (isAgent && message.content ? renderMarkdown(message.content) : '');
+          return html ? (
+            <div className="prose prose-sm text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: html }} />
+          ) : (
+            <span className="whitespace-pre-wrap">{message.content}</span>
+          );
+        })()}
         {isAgent && (
           <div className="mt-2 flex items-center gap-2">
             {message.evaluation && (
