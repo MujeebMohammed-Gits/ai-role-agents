@@ -233,6 +233,24 @@ class RAGContext:
     # ------------------------------------------------------------------ reads
 
 
+
+    async def _embed_query_hf_api(self, text: str) -> list[float]:
+        import os, httpx
+        hf_token = os.environ.get("HF_TOKEN", "")
+        model = os.environ.get("HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+        headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"https://huggingface.co{model}/pipeline/feature-extraction",
+                headers=headers,
+                json={"inputs": text}
+            )
+            resp.raise_for_status()
+            vec = resp.json()
+            if isinstance(vec, list) and vec and isinstance(vec, list):
+                vec = vec
+            return [float(x) for x in vec]
+
     async def _retrieve_qdrant(self, query: str, k: int, emitter: Optional[TraceEmitter] = None) -> list[dict]:
         import os, httpx
         qdrant_url = os.environ.get("QDRANT_URL", "").rstrip("/")
@@ -240,7 +258,7 @@ class RAGContext:
         if not qdrant_url:
             return []
         try:
-            query_embedding = (await self._embed_texts([query]))[0]
+            query_embedding = await self._embed_query_hf_api(query)[0]
             headers = {"Content-Type": "application/json"}
             if qdrant_key:
                 headers["api-key"] = qdrant_key
@@ -295,7 +313,7 @@ class RAGContext:
         if self._collection is None:
             return []
         try:
-            query_embedding = (await self._embed_texts([query]))[0]
+            query_embedding = await self._embed_query_hf_api(query)[0]
             count = self._collection.count()
             n_results = min(k, count) if count else k
             if n_results <= 0:
