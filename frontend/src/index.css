@@ -342,12 +342,68 @@
 }
 
 
-/* Full-width responsive agent response bubbles with clean right-edge scrollbar margin */
-.message-agent {
-  width: 100% !important;
-  max-width: calc(100% - 0.5rem) !important;
-}
-.mermaid-rendered svg {
+/* Full-width responsive agent response bubbles & interactive scrollable Mermaid diagrams */
+.message-bubble {
   max-width: 100% !important;
-  height: auto !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+.mermaid-rendered {
+  display: flex !important;
+  flex-direction: column !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  margin: 14px 0 !important;
+  overflow: hidden !important;
+}
+.mermaid-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 6px 12px !important;
+  background: #f1f5f9 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+.mermaid-badge {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #475569 !important;
+}
+.mermaid-zoom-controls {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+.mermaid-zoom-btn {
+  padding: 2px 9px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #1e293b !important;
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  line-height: 1.4 !important;
+}
+.mermaid-zoom-btn:hover {
+  background: #e2e8f0 !important;
+}
+.mermaid-zoom-level {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #475569 !important;
+  min-width: 38px !important;
+  text-align: center !important;
+}
+.mermaid-viewport {
+  width: 100% !important;
+  max-height: 440px !important;
+  overflow: auto !important;
+  padding: 16px !important;
+}
+.mermaid-canvas {
+  display: inline-block !important;
+  min-width: 100% !important;
+  transition: transform 0.15s ease !important;
 }

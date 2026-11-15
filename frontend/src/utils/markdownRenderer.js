@@ -133,7 +133,7 @@ export function renderMermaidDiagrams(container) {
         <div class="mermaid-toolbar">
           <span class="mermaid-badge">Workflow Diagram</span>
           <div class="mermaid-zoom-controls">
-            <button type="button" class="mermaid-zoom-btn" data-action="out" title="Zoom out">?</button>
+            <button type="button" class="mermaid-zoom-btn" data-action="out" title="Zoom out">-</button>
             <span class="mermaid-zoom-level">100%</span>
             <button type="button" class="mermaid-zoom-btn" data-action="in" title="Zoom in">+</button>
             <button type="button" class="mermaid-zoom-btn" data-action="reset" title="Reset zoom">Reset</button>
