@@ -105,7 +105,7 @@ function MessageBubble({ message, isAgent }) {
   const tailClass = isUser ? 'rounded-tr-none' : 'rounded-tl-none';
 
   return (
-    <div className={`flex ${alignClass} mb-4 fade-in slide-up`}>
+    <div className={`flex ${alignClass} ${isUser ? "max-w-2xl" : "w-full"} mb-4 fade-in slide-up`}>
       <div ref={bubbleRef} className={`message-bubble ${base} ${tailClass}`}>
           {isAgent && meta && (
           <div className="flex items-center gap-2 mb-2">
