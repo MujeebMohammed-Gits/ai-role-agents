@@ -144,14 +144,16 @@ def build_client(provider: str, model: str, **kwargs) -> LLMClient:
             ) from exc
         import os
         _api_key = (kwargs.get("openai_api_key") or os.environ.get("OPENAI_API_KEY") or "proxy").strip()
-        _default_base = "https://nvidia.com" if _api_key.startswith("nvapi-") else "http://localhost:8082/v1"
+        _default_base = "https://integrate.api.nvidia.com/v1" if _api_key.startswith("nvapi-") else "http://localhost:8082/v1"
         _base_url = (
             os.environ.get("OPENAI_BASE_URL")
             or os.environ.get("OPENAI_API_BASE")
             or kwargs.get("openai_api_base")
             or _default_base
         ).strip()
-        if _base_url.rstrip("/") == "https://nvidia.com": _base_url = "https://nvidia.com"
+        if _base_url.rstrip("/") == "https://integrate.api.nvidia.com/v1": _base_url = "https://integrate.api.nvidia.com/v1"
+        if "integrate.api" not in _base_url:
+            _base_url = "https://integrate.api.nvidia.com/v1"
         return _OpenAILLMClient(
             AsyncOpenAI(api_key=_api_key, base_url=_base_url, timeout=90.0), model
         )
