@@ -64,13 +64,13 @@ Generic AI assistants rely on one-size-fits-all system prompts that lack domain 
 
 ```mermaid
 flowchart LR
-    UI["React + Vite Light Studio UI\n(Vercel Global CDN)"] -->|POST /api/query/stream (SSE)| API["FastAPI Backend\n(Render Cloud)"]
-    UI <-->|WSS /api/ws/logs & /trace| API
-    API --> ORCH["Agent Orchestrator\n(12 Personas + Session Memory)"]
-    ORCH --> RAG["Hybrid RAG Retriever\n(Qdrant Cloud / Local ChromaDB)"]
-    RAG --> EMB["HF Inference API\n(all-MiniLM-L6-v2)"]
-    ORCH --> LLM["Multi-Model LLM Client\n(NVIDIA NIM / OpenAI / Anthropic)"]
-    ORCH --> EVAL["Guardrail, Critique &\nEval Validation Engine"]
+    UI["React + Vite Light Studio UI<br/>(Vercel Global CDN)"] -->|"POST /api/query/stream (SSE)"| API["FastAPI Backend<br/>(Render Cloud)"]
+    UI <-->|"WSS /api/ws/logs & /trace"| API
+    API --> ORCH["Agent Orchestrator<br/>(12 Personas + Session Memory)"]
+    ORCH --> RAG["Hybrid RAG Retriever<br/>(Qdrant Cloud / Local ChromaDB)"]
+    RAG --> EMB["HF Inference API<br/>(all-MiniLM-L6-v2)"]
+    ORCH --> LLM["Multi-Model LLM Client<br/>(NVIDIA NIM / OpenAI / Anthropic)"]
+    ORCH --> EVAL["Guardrail, Critique &<br/>Eval Validation Engine"]
 ```
 
 ---
