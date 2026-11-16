@@ -9,7 +9,7 @@
 [![Vector DB](https://shields.io)](https://qdrant.io)
 [![License: MIT](https://shields.io)](LICENSE)
 
-Built by **Mujeeb Mohammed** • [Try the Live Platform](https://vercel.app) • [GitHub Repository](https://github.com)
+Built by **Mujeeb Mohammed** • [Try the Live Platform](https://ai-role-agents.vercel.app) • [GitHub Repository](https://github.com)
 
 </div>
 
