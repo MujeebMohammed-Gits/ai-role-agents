@@ -95,7 +95,7 @@ function MessageBubble({ message, isAgent }) {
   // streaming, the "Rendering workflow diagram..." placeholder stays visible.
   useEffect(() => {
     if (message.streaming || !bubbleRef.current) return;
-    renderMermaidDiagrams(bubbleRef.current);
+    requestAnimationFrame(() => { if (bubbleRef.current) renderMermaidDiagrams(bubbleRef.current); });
   }, [message.streaming, message.rendered, message.content]);
   const meta = isAgent ? AGENT_META[message.agentRole || 'delivery_management'] : null;
   const base = isUser

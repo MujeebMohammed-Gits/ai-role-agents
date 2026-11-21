@@ -76,7 +76,12 @@ class BaseAgent:
     ) -> None:
         self.role = role
         self.name = name
-        self.system_prompt = system_prompt + QUALITY_DIRECTIVE
+        req_secs = ", ".join(f"## {s}" for s in self.evaluator.required_sections_for(role))
+        role_contract = (
+            f"\n6. MANDATORY STRUCTURE FOR {self.name.upper()}: Include clear Markdown headings covering: {req_secs}.\n"
+            "7. Always combine BOTH numbered action steps (1. 2. 3.) AND bulleted insights (- ) in every response, and cite retrieved RAG/Web sources inline."
+        )
+        self.system_prompt = system_prompt + QUALITY_DIRECTIVE + role_contract
         self.event_bus = event_bus
         self.blackboard = blackboard
         self.memory = memory

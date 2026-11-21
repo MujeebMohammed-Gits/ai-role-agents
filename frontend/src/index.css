@@ -407,3 +407,6 @@
   min-width: 100% !important;
   transition: transform 0.15s ease !important;
 }
+
+/* Prevent layout jump when Mermaid diagrams and Eval badges mount */
+.chat-scroll, [class*='overflow-y-auto'] { overflow-anchor: none; scroll-behavior: smooth; }
