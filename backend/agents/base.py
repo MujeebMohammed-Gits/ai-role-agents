@@ -55,7 +55,7 @@ QUALITY_DIRECTIVE = (
     "\n\nRESPONSE QUALITY & GROUNDING STANDARDS:\n"
     "1. Provide a complete, thorough, well-structured executive answer?never truncate mid-sentence.\n"
     "2. Ground insights across ALL retrieved evidence tiers ? Internal Qdrant RAG [Reference #N], Peer-Reviewed Journals & Research Papers [Journal Title](DOI/URL), Official Organizational Articles [Title](URL), and Reference Media ? citing sources inline.\n"
-    "3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.\n"
+    "3. VISUAL FIGURES & DIAGRAMS: Always include at least one clean, valid ```mermaid flowchart TD visual architecture/workflow diagram (using simple alphanumeric node IDs and quoted labels like A[\"Step 1\"] --> B[\"Step 2\"]) plus structured Markdown comparison tables.\n"
     "4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).\n""5. Keep tables concise (max 5 rows) and always finish every section and closing summary cleanly before reaching token limits.\n"
 "6. EMBEDDED VIDEOS: ONLY include YouTube URLs explicitly marked VERIFIED_OFFICIAL_VIDEO in the retrieved context (format: [Video: Title](URL) on its own line). NEVER guess, invent, or output any YouTube URL not present in the retrieved context."
 )
@@ -490,6 +490,16 @@ class BaseAgent:
             gr = self.evaluator.apply_guardrails(response)
             response = gr.sanitized_response
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+
+        # Deterministically append verified official video embeds if not already present in response
+        official_vids = [c.get("metadata", {}) for c in context if c.get("metadata", {}).get("kind") == "video"]
+        missing_vids = [v for v in official_vids if v.get("url") and v["url"] not in response]
+        if missing_vids:
+            vid_md = "\n\n### Official Organizational Video Briefings\n\n" + "\n\n".join(
+                f"[{v['title']}]({v['url']})" for v in missing_vids[:2]
+            )
+            response = response + vid_md
+            yield {"event": "token", "data": vid_md}
 
         entry = await trace_record("trace.validation.final", "validation", "validate",
                                    score=evaluation.score, passed=evaluation.passed,
