@@ -25,7 +25,33 @@ function escapeHtml(unsafe) {
 // characters (e.g. `A[Text (Note)]`), which Mermaid rejects. Wrap those
 // labels in quotes so they parse cleanly: `A["Text (Note)"]`.
 function sanitizeMermaid(source) {
-  return source.split('\n').map((line) => {
+  let text = String(source || '').replace(/\r\n/g, '\n').trim();
+  // Ensure newline after diagram header (e.g., "stateDiagram-v2 [*] --> A" -> "stateDiagram-v2\n[*] --> A")
+  text = text.replace(/^(stateDiagram-v2|stateDiagram|flowchart\s+[A-Z]{2}|graph\s+[A-Z]{2}|sequenceDiagram|gantt|classDiagram|erDiagram)\s+(?!\n)/i, '$1\n');
+
+  const isStateDiagram = /^stateDiagram/i.test(text);
+
+  return text.split('\n').map((rawLine) => {
+    let line = rawLine.trim();
+    if (!line) return '';
+
+    if (isStateDiagram) {
+      // Fix invalid LLM syntax: state "Idea_Ideation" --> Next : Label  ==>  Idea_Ideation --> Next : Label
+      line = line.replace(/^state\s+"([^"]+)"\s*(-->|->)/, (_, sName, arrow) => {
+        const cleanId = sName.replace(/[^A-Za-z0-9_]/g, '_');
+        return `${cleanId} ${arrow}`;
+      });
+      // Replace Unicode comparison symbols in state transition labels that break Mermaid v10/v11 parser
+      line = line.replace(/?/g, '>=').replace(/?/g, '<=').replace(/?/g, '!=').replace(/?/g, 'to');
+      // Wrap transition labels containing special characters in quotes if needed
+      line = line.replace(/^([^:\n]+:\s*)(.+)$/, (m, prefix, lbl) => {
+        const cleanLbl = lbl.replace(/"/g, "'").trim();
+        return `${prefix}${cleanLbl}`;
+      });
+      return line;
+    }
+
+    // Flowchart / graph node label quoting
     return line.replace(
       /([A-Za-z_][\w\-]*)\[(".*?"|'.*?'|[^\]]*)\]/g,
       (match, id, label) => {
@@ -34,12 +60,9 @@ function sanitizeMermaid(source) {
           const inner = label.slice(1, -1).replace(/\\?"/g, "'");
           return `${id}["${inner}"]`;
         }
-        const cleaned = label.replace(/\\?"/g, "'");
-        const needsQuote = /[()\[\]{}|&;<>']/.test(cleaned);
-        if (needsQuote) {
-          return `${id}["${cleaned}"]`;
-        }
-        return `${id}[${cleaned}]`;
+        const cleaned = label.replace(/\\?"/g, "'").replace(/?/g, '>=').replace(/?/g, '<=');
+        const needsQuote = /[()\[\]{}|&;<>':\/]/.test(cleaned);
+        return needsQuote ? `${id}["${cleaned}"]` : `${id}[${cleaned}]`;
       }
     );
   }).join('\n');
@@ -151,7 +174,7 @@ export function renderMermaidDiagrams(container) {
             <button type="button" class="mermaid-zoom-btn" data-action="reset" title="Reset zoom">Reset</button>
           </div>
         </div>
-        <div class="mermaid-viewport">
+        <div class="mermaid-viewport" style="overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">
           <div class="mermaid-canvas">${svg}</div>
         </div>
       `;
