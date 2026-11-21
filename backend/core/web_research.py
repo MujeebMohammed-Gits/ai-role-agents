@@ -17,7 +17,7 @@ async def search_academic_journals(query: str, max_papers: int = 3) -> list[dict
     """Fetch peer-reviewed journal articles & research papers via OpenAlex API (free, no key)."""
     papers: list[dict] = []
     try:
-        q_enc = urllib.parse.quote_plus(query)
+        q_enc = urllib.parse.quote_plus(f"{query} official conference OR talk")
         api_url = f"https://openalex.org{q_enc}&per-page={max_papers}&sort=relevance_score:desc"
         async with httpx.AsyncClient(
             timeout=6.0,
@@ -88,6 +88,45 @@ async def search_org_articles(query: str, max_results: int = 3) -> list[dict]:
     return articles
 
 
+OFFICIAL_VIDEO_CHANNELS = {
+    "scrum.org",
+    "scrum alliance",
+    "atlassian",
+    "project management institute",
+    "pmi",
+    "scaled agile",
+    "google cloud tech",
+    "google for developers",
+    "cncf [cloud native computing foundation]",
+    "cloud native computing foundation",
+    "aws events",
+    "amazon web services",
+    "microsoft developer",
+    "microsoft azure",
+    "hashicorp",
+    "github",
+    "docker",
+    "nielsen norman group",
+    "silicon valley product group",
+    "thoughtworks",
+    "goto conferences",
+    "infoq",
+    "nvidia",
+    "nvidia developer",
+    "nist",
+    "linux foundation",
+    "openai",
+    "anthropic",
+}
+
+
+def _is_official_channel(channel_name: str) -> bool:
+    ch = (channel_name or "").strip().lower()
+    if not ch:
+        return False
+    return any(allowed == ch or allowed in ch for allowed in OFFICIAL_VIDEO_CHANNELS)
+
+
 async def search_youtube_videos(query: str, max_videos: int = 2) -> list[dict]:
     """Fetch authentic playable YouTube video talks & tutorials."""
     videos: list[dict] = []
@@ -122,13 +161,16 @@ async def search_youtube_videos(query: str, max_videos: int = 2) -> list[dict]:
                         vid = vr.get("videoId", "")
                         runs = vr.get("title", {}).get("runs", [])
                         title = "".join(r.get("text", "") for r in runs).strip()
-                        if len(vid) == 11 and title and vid not in seen:
+                        owner_runs = vr.get("ownerText", {}).get("runs", []) or vr.get("longBylineText", {}).get("runs", [])
+                        channel = "".join(r.get("text", "") for r in owner_runs).strip()
+                        if len(vid) == 11 and title and vid not in seen and _is_official_channel(channel):
                             seen.add(vid)
                             videos.append({
-                                "title": f"Video: {title}",
+                                "title": f"Official Video ({channel}): {title}",
                                 "url": f"{yt_watch}{vid}",
-                                "snippet": f"Authentic reference video: {title} ({yt_watch}{vid})",
+                                "snippet": f"Official organizational video by {channel}: {title} ({yt_watch}{vid})",
                                 "kind": "video",
+                                "channel": channel,
                             })
                             if len(videos) >= max_videos:
                                 return videos
