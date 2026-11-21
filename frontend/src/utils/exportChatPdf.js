@@ -144,7 +144,7 @@ export async function downloadConversationPdf(agent, conversation) {
         const nextPageStart = (startPage + 1) * pageHeightPx;
         const pushPx = Math.ceil(nextPageStart - topRel + 14);
 const curMargin = parseFloat(window.getComputedStyle(el).marginTop) || 0;
-el.style.marginTop = ${curMargin + pushPx}px;
+el.style.marginTop = (curMargin + pushPx) + 'px';
 }
 });
 const canvas = await html2canvas(wrapper, {
@@ -171,7 +171,7 @@ const renderH = (srcH / (canvas.width / usableWidth));
 pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', margin, margin, usableWidth, renderH);
 }
 const slug = (agent.role || 'agent').replace(/[^a-z0-9_-]/gi, '-');
-pdf.save(ai-role-agents-${slug}-chat.pdf);
+pdf.save('ai-role-agents-' + slug + '-chat.pdf');
 } finally {
 document.body.removeChild(wrapper);
 }
