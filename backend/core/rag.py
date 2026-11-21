@@ -234,43 +234,39 @@ class RAGContext:
 
 
 
+    def _get_fastembed_model(self):
+        if not hasattr(self, "_fe_model") or self._fe_model is None:
+            from fastembed import TextEmbedding
+            self._fe_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        return self._fe_model
+
     async def _embed_query_hf_api(self, text: str) -> list[float]:
-        import os, httpx
-        hf_token = os.environ.get("HF_TOKEN", "")
-        model = os.environ.get("HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-        headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction",
-                headers=headers,
-                json={"inputs": text}
-            )
-            resp.raise_for_status()
-            vec = resp.json()
-            while isinstance(vec, list) and vec and isinstance(vec, list):
-                vec = vec
+        import asyncio
+        loop = asyncio.get_running_loop()
+        def _encode():
+            model = self._get_fastembed_model()
+            vec = next(model.embed([text]))
             return [float(x) for x in vec]
+        return await loop.run_in_executor(None, _encode)
 
     async def _retrieve_qdrant(self, query: str, k: int, emitter: Optional[TraceEmitter] = None) -> list[dict]:
         import os, httpx
         qdrant_url = os.environ.get("QDRANT_URL", "").strip().strip('"').strip("'").rstrip("/")
-        qdrant_key = os.environ.get("QDRANT_API_KEY", "")
+        qdrant_key = os.environ.get("QDRANT_API_KEY", "").strip().strip('"').strip("'")
         if not qdrant_url:
             return []
+        headers = {"Content-Type": "application/json"}
+        if qdrant_key:
+            headers["api-key"] = qdrant_key
         try:
             query_embedding = await self._embed_query_hf_api(query)
-            headers = {"Content-Type": "application/json"}
-            if qdrant_key:
-                headers["api-key"] = qdrant_key
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
                     f"{qdrant_url}/collections/{self.collection_name}/points/search",
                     headers=headers,
                     json={"vector": query_embedding, "limit": k, "with_payload": True},
                 )
-                if resp.status_code != 200:
-                    logger.warning("Qdrant search returned %s: %s", resp.status_code, resp.text[:200])
-                    return []
+                resp.raise_for_status()
                 hits = resp.json().get("result", [])
                 docs = []
                 best_score = None
@@ -290,14 +286,52 @@ class RAGContext:
                 if emitter is not None:
                     await emitter.rag_retrieve(
                         score=best_score,
-                        data={"query": query, "top_k": k, "returned": len(docs)},
+                        data={"query": query, "top_k": k, "returned": len(docs), "mode": "qdrant_fastembed_free"},
                     )
                 return docs
         except Exception as exc:
-            logger.warning("Qdrant/HF retrieve skipped (%s): %s", type(exc).__name__, exc)
-            if emitter is not None:
-                await emitter.rag_retrieve(score=None, data={"query": query, "error": str(exc)})
-            return []
+            logger.warning("FastEmbed vector search fallback to Qdrant scroll (%s): %s", type(exc).__name__, exc)
+            # 100% free keyword-overlap fallback directly over Qdrant Cloud payloads
+            try:
+                q_tokens = set(_tokenize(query))
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        f"{qdrant_url}/collections/{self.collection_name}/points/scroll",
+                        headers=headers,
+                        json={"limit": 120, "with_payload": True, "with_vector": False},
+                    )
+                    resp.raise_for_status()
+                    points = resp.json().get("result", {}).get("points", [])
+                    scored = []
+                    for pt in points:
+                        payload = pt.get("payload") or {}
+                        txt = payload.get("text", "")
+                        t_tokens = set(_tokenize(txt))
+                        overlap = len(q_tokens & t_tokens) / (len(q_tokens) or 1)
+                        if overlap > 0:
+                            scored.append((overlap, pt, payload))
+                    scored.sort(key=lambda x: x, reverse=True)
+                    docs = []
+                    best_score = round(scored, 4) if scored else 0.0
+                    for sc, pt, payload in scored[:k]:
+                        docs.append({
+                            "id": str(pt.get("id", "")),
+                            "text": payload.get("text", ""),
+                            "source": payload.get("source", "knowledge_base"),
+                            "score": round(sc, 4),
+                            "distance": round(1.0 - sc, 4),
+                            "metadata": payload,
+                        })
+                    if emitter is not None:
+                        await emitter.rag_retrieve(
+                            score=best_score,
+                            data={"query": query, "top_k": k, "returned": len(docs), "mode": "qdrant_scroll_free"},
+                        )
+                    return docs
+            except Exception as exc2:
+                if emitter is not None:
+                    await emitter.rag_retrieve(score=None, data={"query": query, "error": str(exc2)})
+                return []
 
     async def retrieve(self, query: str, top_k: Optional[int] = None,
                        emitter: Optional[TraceEmitter] = None) -> list[dict]:
