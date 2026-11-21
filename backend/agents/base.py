@@ -1,4 +1,3 @@
-import re
 """Base role agent with production-grade deterministic cognitive cycle.
 
 Every role agent runs queries through the cycle:
@@ -12,6 +11,8 @@ WebSocket streaming to the frontend tracking panel.
 """
 
 from __future__ import annotations
+
+import re
 
 import asyncio
 import time
