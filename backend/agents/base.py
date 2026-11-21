@@ -495,7 +495,8 @@ class BaseAgent:
             yield {"event": "trace", "data": entry}
             revision_messages = messages + [{"role": "user", "content": critique}]
             rev_chunks: list[str] = []
-            yield {"event": "token", "data": "\n\n---\n### Refined & Verified Response\n\n"}
+            fence_close = "\n```\n" if "".join(response_chunks).count("```") % 2 == 1 else ""
+            yield {"event": "token", "data": f"{fence_close}\n\n---\n### Refined & Verified Response\n\n"}
             async for chunk in self.llm.stream_complete(self.system_prompt, revision_messages):
                 rev_chunks.append(chunk)
                 clean_chunk = re.sub(r"\u3010[^\u3011]*\u3011", "", chunk)
@@ -521,7 +522,8 @@ class BaseAgent:
             ]
         missing_vids = [v for v in official_vids if v.get("url") and v["url"] not in response]
         if missing_vids:
-            vid_md = "\n\n### Official Organizational Video Briefings\n\n" + "\n\n".join(
+            fence_close = "\n```\n" if response.count("```") % 2 == 1 else ""
+            vid_md = f"{fence_close}\n\n### Official Organizational Video Briefings\n\n" + "\n\n".join(
                 f"[{v['title']}]({v['url']})" for v in missing_vids[:2]
             )
             response = response + vid_md

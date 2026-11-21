@@ -7,6 +7,7 @@ mermaid.initialize({
   theme: 'default',
   securityLevel: 'loose',
   fontFamily: 'Inter, system-ui, sans-serif',
+  suppressErrorRendering: true,
 });
 
 marked.setOptions({
@@ -24,6 +25,8 @@ function escapeHtml(str) {
 
 function sanitizeMermaid(source) {
   let text = String(source || '').replace(/\r\n/g, '\n').trim();
+  // Truncate if an unclosed fence swallowed subsequent Markdown headings or horizontal rules
+  text = text.split(/\n(?:---|###\s)/)[0].trim();
   text = text.replace(
     /^(stateDiagram-v2|stateDiagram|flowchart\s+[A-Z]{2}|graph\s+[A-Z]{2}|sequenceDiagram|gantt|classDiagram|erDiagram)\s+(?!\n)/i,
     '$1\n'
@@ -167,7 +170,7 @@ export function renderMermaidDiagrams(container) {
       placeholder.classList.add('mermaid-rendered');
     }).catch((err) => {
       console.error('[mermaid] render failed:', err);
-      document.querySelectorAll('svg[id^="dmermaid-"]').forEach((el) => el.remove());
+      document.querySelectorAll('[id^="dmermaid-"], svg[id^="dmermaid-"]').forEach((el) => el.remove());
       placeholder.innerHTML = `
         <div class="mermaid-error">
           <div class="mermaid-error-title">Unable to render workflow diagram</div>
