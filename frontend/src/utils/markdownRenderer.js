@@ -92,17 +92,23 @@ export function renderMarkdown(text) {
   // Convert anchor-wrapped or bare YouTube URLs cleanly into responsive embedded iframes.
   html = html.replace(
     /<a[^>]+href="https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})[^"]*"[^>]*>(.*?)<\/a>/gi,
-    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$1" title="$2" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
+    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$1" title="$2" referrerpolicy="strict-origin-when-cross-origin" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
   );
   html = html.replace(
     /(?<!src="|href=")(https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11}))/g,
-    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$2" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
+    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$2" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
+  );
+
+  // Convert direct .mp4 / .webm video links into playable HTML5 video players
+  html = html.replace(
+    /<a[^>]+href="(https?:\/\/[^"]+\.(?:mp4|webm|ogg)(?:\?[^"]*)?)"[^>]*>(.*?)<\/a>/gi,
+    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><video class="w-full max-h-80" controls preload="metadata" src="$1"></video><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
   );
 
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'rel', 'class', 'allowfullscreen', 'loading', 'frameborder', 'src', 'sandbox'],
-    ADD_TAGS: ['iframe'],
-    ADD_URI_ATTR: [],
+    ADD_ATTR: ['target', 'rel', 'class', 'allowfullscreen', 'loading', 'frameborder', 'src', 'allow', 'referrerpolicy', 'title', 'controls', 'preload'],
+    ADD_TAGS: ['iframe', 'video', 'source'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }
 
