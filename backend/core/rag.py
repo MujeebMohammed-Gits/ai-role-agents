@@ -253,7 +253,7 @@ class RAGContext:
 
     async def _retrieve_qdrant(self, query: str, k: int, emitter: Optional[TraceEmitter] = None) -> list[dict]:
         import os, httpx
-        qdrant_url = os.environ.get("QDRANT_URL", "").rstrip("/")
+        qdrant_url = os.environ.get("QDRANT_URL", "").strip().strip('"').strip("'").rstrip("/")
         qdrant_key = os.environ.get("QDRANT_API_KEY", "")
         if not qdrant_url:
             return []
