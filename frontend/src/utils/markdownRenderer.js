@@ -42,7 +42,7 @@ function sanitizeMermaid(source) {
         return `${cleanId} ${arrow}`;
       });
       // Replace Unicode comparison symbols in state transition labels that break Mermaid v10/v11 parser
-      line = line.replace(/?/g, '>=').replace(/?/g, '<=').replace(/?/g, '!=').replace(/?/g, 'to');
+      line = line.replace(/\u2265/g, '>=').replace(/\u2264/g, '<=').replace(/\u2260/g, '!=').replace(/\u2192/g, 'to');
       // Wrap transition labels containing special characters in quotes if needed
       line = line.replace(/^([^:\n]+:\s*)(.+)$/, (m, prefix, lbl) => {
         const cleanLbl = lbl.replace(/"/g, "'").trim();
@@ -60,7 +60,7 @@ function sanitizeMermaid(source) {
           const inner = label.slice(1, -1).replace(/\\?"/g, "'");
           return `${id}["${inner}"]`;
         }
-        const cleaned = label.replace(/\\?"/g, "'").replace(/?/g, '>=').replace(/?/g, '<=');
+        const cleaned = label.replace(/\\?"/g, "'").replace(/\u2265/g, '>=').replace(/\u2264/g, '<=');
         const needsQuote = /[()\[\]{}|&;<>':\/]/.test(cleaned);
         return needsQuote ? `${id}["${cleaned}"]` : `${id}[${cleaned}]`;
       }
