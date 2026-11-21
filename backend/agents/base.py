@@ -57,7 +57,7 @@ QUALITY_DIRECTIVE = (
     "2. Ground insights across ALL retrieved evidence tiers ? Internal Qdrant RAG [Reference #N], Peer-Reviewed Journals & Research Papers [Journal Title](DOI/URL), Official Organizational Articles [Title](URL), and Reference Media ? citing sources inline.\n"
     "3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.\n"
     "4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).\n""5. Keep tables concise (max 5 rows) and always finish every section and closing summary cleanly before reaching token limits.\n"
-"6. EMBEDDED VIDEOS: When Verified Video URLs (https://www.youtube.com/watch?v=...) appear in the retrieved context, include 1-2 relevant video links on their own line as [Video: Title](https://www.youtube.com/watch?v=ID) so the UI embeds the playable video directly. Never invent YouTube URLs."
+"6. EMBEDDED VIDEOS: ONLY include YouTube URLs explicitly marked VERIFIED_OFFICIAL_VIDEO in the retrieved context (format: [Video: Title](URL) on its own line). NEVER guess, invent, or output any YouTube URL not present in the retrieved context."
 )
 
 

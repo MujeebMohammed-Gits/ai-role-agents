@@ -88,94 +88,64 @@ async def search_org_articles(query: str, max_results: int = 3) -> list[dict]:
     return articles
 
 
-OFFICIAL_VIDEO_CHANNELS = {
-    "scrum.org",
-    "scrum alliance",
-    "atlassian",
-    "project management institute",
-    "pmi",
-    "scaled agile",
-    "google cloud tech",
-    "google for developers",
-    "cncf [cloud native computing foundation]",
-    "cloud native computing foundation",
-    "aws events",
-    "amazon web services",
-    "microsoft developer",
-    "microsoft azure",
-    "hashicorp",
-    "github",
-    "docker",
-    "nielsen norman group",
-    "silicon valley product group",
-    "thoughtworks",
-    "goto conferences",
-    "infoq",
-    "nvidia",
-    "nvidia developer",
-    "nist",
-    "linux foundation",
-    "openai",
-    "anthropic",
-}
-
-
-def _is_official_channel(channel_name: str) -> bool:
-    ch = (channel_name or "").strip().lower()
-    if not ch:
-        return False
-    return any(allowed == ch or allowed in ch for allowed in OFFICIAL_VIDEO_CHANNELS)
+VERIFIED_OFFICIAL_FEEDS = [
+    ("Atlassian", "UCLXo7UDZvByw2ixzpQCufnA", ["agile", "jira", "kanban", "delivery", "devops", "scrum", "team", "roadmap"]),
+    ("Google Cloud Tech", "UCJS9pqu9BzkAMNTmzNMNhvg", ["sre", "cloud", "platform", "kubernetes", "ai", "mlops", "reliability", "migration"]),
+    ("CNCF", "UCvqbFHwN-nwalWPjPUKpvTA", ["kubernetes", "platform", "devops", "cloud", "observability", "ci/cd"]),
+    ("NVIDIA", "UCHuiy8bXnmK5nisYHUd1J5g", ["ai", "llm", "rag", "agent", "enterprise", "ml"]),
+    ("GOTO Conferences", "UCs_tLP3AiwYKwdUHpltJPuA", ["architecture", "agile", "delivery", "leadership", "product", "ai"]),
+    ("Microsoft Developer", "UCsMica-v34Irf9KVTh6xx-g", ["ai", "agent", "devops", "architecture", "cloud", "engineering"]),
+]
 
 
 async def search_youtube_videos(query: str, max_videos: int = 2) -> list[dict]:
-    """Fetch authentic playable YouTube video talks & tutorials."""
+    """Fetch 100% real, playable videos directly from official organization YouTube Atom feeds."""
+    q_words = set(re.findall(r"[a-z0-9]+", query.lower()))
+    ranked_feeds = []
+    for org_name, ch_id, tags in VERIFIED_OFFICIAL_FEEDS:
+        overlap = len(q_words & set(tags))
+        ranked_feeds.append((overlap, org_name, ch_id))
+    ranked_feeds.sort(key=lambda x: x, reverse=True)
+
+    yt_feed_base = "https://" + "www.youtube." + "com/feeds/videos.xml?channel_id="
+    yt_watch = "https://" + "www.youtube." + "com/watch?v="
+
+    candidates: list[tuple[int, dict]] = []
+    async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
+        for _, org_name, ch_id in ranked_feeds[:3]:
+            try:
+                resp = await client.get(f"{yt_feed_base}{ch_id}")
+                if resp.status_code != 200:
+                    continue
+                entries = re.findall(r"<entry>(.*?)</entry>", resp.text, flags=re.S)
+                for ent in entries[:8]:
+                    vid_m = re.search(r"<yt:videoId>([a-zA-Z0-9_-]{11})</yt:videoId>", ent)
+                    tit_m = re.search(r"<title>(.*?)</title>", ent, flags=re.S)
+                    if not vid_m or not tit_m:
+                        continue
+                    vid = vid_m.group(1)
+                    title = html.unescape(tit_m.group(1)).strip()
+                    t_words = set(re.findall(r"[a-z0-9]+", title.lower()))
+                    score = len(q_words & t_words)
+                    candidates.append((score, {
+                        "title": f"Official Video ({org_name}): {title}",
+                        "url": f"{yt_watch}{vid}",
+                        "snippet": f"VERIFIED_OFFICIAL_VIDEO by {org_name}: {title} -> {yt_watch}{vid}",
+                        "kind": "video",
+                        "channel": org_name,
+                    }))
+            except Exception:
+                continue
+
+    candidates.sort(key=lambda x: x, reverse=True)
+    seen = set()
     videos: list[dict] = []
-    try:
-        q_enc = urllib.parse.quote_plus(query)
-        yt_search = "https://" + "www.youtube." + "com/results?search_query=" + q_enc
-        yt_watch = "https://" + "www.youtube." + "com/watch?v="
-        async with httpx.AsyncClient(
-            timeout=6.0,
-            follow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-        ) as client:
-            resp = await client.get(yt_search)
-            resp.raise_for_status()
-            m = re.search(r"var ytInitialData = (\{.*?\});</script>", resp.text)
-            if m:
-                data = json.loads(m.group(1))
-                contents = (
-                    data.get("contents", {})
-                    .get("twoColumnSearchResultsRenderer", {})
-                    .get("primaryContents", {})
-                    .get("sectionListRenderer", {})
-                    .get("contents", [])
-                )
-                seen = set()
-                for section in contents:
-                    items = section.get("itemSectionRenderer", {}).get("contents", [])
-                    for it in items:
-                        vr = it.get("videoRenderer")
-                        if not vr:
-                            continue
-                        vid = vr.get("videoId", "")
-                        runs = vr.get("title", {}).get("runs", [])
-                        title = "".join(r.get("text", "") for r in runs).strip()
-                        owner_runs = vr.get("ownerText", {}).get("runs", []) or vr.get("longBylineText", {}).get("runs", [])
-                        channel = "".join(r.get("text", "") for r in owner_runs).strip()
-                        if len(vid) == 11 and title and vid not in seen and _is_official_channel(channel):
-                            seen.add(vid)
-                            videos.append({
-                                "title": f"Official Video ({channel}): {title}",
-                                "url": f"{yt_watch}{vid}",
-                                "snippet": f"Official organizational video by {channel}: {title} ({yt_watch}{vid})",
-                                "kind": "video",
-                                "channel": channel,
-                            })
-                            if len(videos) >= max_videos:
-                                return videos
-    except Exception:
-        pass
+    for _, item in candidates:
+        if item["url"] not in seen:
+            seen.add(item["url"])
+            videos.append(item)
+            if len(videos) >= max_videos:
+                break
     return videos
 
 

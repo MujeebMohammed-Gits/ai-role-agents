@@ -168,7 +168,7 @@ function MessageBubble({ message, isAgent }) {
 
 function ConversationThread({ messages }) {
   return (
-    <div className="h-full overflow-y-auto px-6 py-6 space-y-4">
+    <div data-chat-thread="true" className="h-full overflow-y-auto px-6 py-6 space-y-4">
       {messages.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full text-muted">
           <MessageCircle size={48} className="mb-3 opacity-50" />

@@ -91,14 +91,18 @@ export function renderMarkdown(text) {
 
   // Convert anchor-wrapped or bare YouTube URLs cleanly into responsive embedded iframes.
   html = html.replace(
-    /<a[^>]+href="https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})[^"]*"[^>]*>(.*?)<\/a>/gi,
+    /<a[^>]+href="https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^"]*"[^>]*>(.*?)<\/a>/gi,
     '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$1" title="$2" referrerpolicy="strict-origin-when-cross-origin" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
   );
   html = html.replace(
-    /(?<!src="|href=")(https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11}))/g,
+    /(?<!src="|href=")(https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11}))/g,
     '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$2" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
   );
 
+  html = html.replace(
+    /<a[^>]+href="https?:\/\/(?:www\.)?youtube\.com\/playlist\?list=([a-zA-Z0-9_-]+)[^"]*"[^>]*>(.*?)<\/a>/gi,
+    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/videoseries?list=$1" title="$2" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" frameborder="0" allowfullscreen loading="lazy"></iframe><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
+  );
   // Convert direct .mp4 / .webm video links into playable HTML5 video players
   html = html.replace(
     /<a[^>]+href="(https?:\/\/[^"]+\.(?:mp4|webm|ogg)(?:\?[^"]*)?)"[^>]*>(.*?)<\/a>/gi,
