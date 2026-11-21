@@ -446,8 +446,8 @@ class BaseAgent:
         async for chunk in self.llm.stream_complete(self.system_prompt, messages):
             response_chunks.append(chunk)
             clean_chunk = re.sub(r"\u3010[^\u3011]*\u3011", "", chunk)
-                if clean_chunk:
-                    yield {"event": "token", "data": clean_chunk}
+            if clean_chunk:
+                yield {"event": "token", "data": clean_chunk}
         response = "".join(response_chunks)
         await self.hooks.run("after_llm", self.role, response)
         emit_log("info", "LLM response received", {"chars": len(response)})
