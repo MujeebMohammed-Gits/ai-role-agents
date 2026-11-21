@@ -89,21 +89,24 @@ export function renderMarkdown(text) {
     renderer,
   });
 
-  // Convert YouTube / Vimeo URLs to responsive embedded iframes.
-  html = html.replace(
-    /(https?:\/\/www\.youtube(?:-nocookie)?\.com\/watch\?v=([a-zA-Z0-9_-]{11})|https?:\/\/youtu\.be\/([a-zA-Z0-9_-]{11}))/g,
-    '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://www.youtube.com/embed/$2$3" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
-  );
   html = html.replace(
     /(https?:\/\/player\.vimeo\.com\/video\/([0-9]+)|https?:\/\/vimeo\.com\/([0-9]+))/g,
     '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://player.vimeo.com/video/$2$3" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
   );
 
-  return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'rel', 'class', 'allowfullscreen', 'loading', 'frameborder', 'src', 'sandbox'],
+  html = DOMPurify.sanitize(html, {
+    ADD_ATTR: ['target', 'rel', 'class', 'allowfullscreen', 'loading', 'frameborder', 'src', 'sandbox', 'referrerpolicy'],
     ADD_TAGS: ['iframe'],
     ADD_URI_ATTR: [],
   });
+
+  // Convert verified YouTube links to responsive 16:9 embed iframes after sanitization.
+  html = html.replace(
+    /<a[^>]*href="https?:\/\/(?:www\.youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})"[^>]*>.*?<\/a>/g,
+    '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://www.youtube.com/embed/$1" frameborder="0" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>'
+  );
+
+  return html;
 }
 
 /**
@@ -150,7 +153,9 @@ export function renderMermaidDiagrams(container) {
       const label = placeholder.querySelector('.mermaid-zoom-level');
       if (svgEl) {
         svgEl.removeAttribute('style');
-        svgEl.style.maxWidth = 'none';
+        svgEl.style.maxWidth = '100%';
+        svgEl.style.maxHeight = '360px';
+        svgEl.style.width = 'auto';
         svgEl.style.height = 'auto';
         svgEl.style.display = 'block';
         svgEl.style.margin = '0 auto';

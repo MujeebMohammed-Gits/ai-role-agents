@@ -4,12 +4,13 @@ import {
   LayoutDashboard, Bot, MessageCircle, Activity, Play, Terminal,
   ChevronRight, X, Maximize, Minimize, Plus, Search, Sparkles,
   Globe, Layers, Shield, Users, Briefcase, Target, Brain, Wand2,
-  BarChart3, Clock, RefreshCw, Link, ExternalLink,
+  BarChart3, Clock, RefreshCw, Link, ExternalLink, Download,
 } from 'lucide-react';
 import { listAgents, getMemory, clearMemory } from './services/api.js';
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { renderMarkdown, renderMermaidDiagrams } from './utils/markdownRenderer.js';
 import { formatLog, LEVEL_COLORS } from './utils/formatLog.js';
+import { downloadConversationPdf } from './utils/exportChatPdf.js';
 
 const AGENT_META = {
   delivery_management: { color: 'indigo', icon: Briefcase, gradient: 'from-indigo-100 to-indigo-200', border: 'border-indigo-200/50' },
@@ -344,6 +345,7 @@ export default function App() {
   const [logCollapsed, setLogCollapsed] = useState(true);
   const [traceCollapsed, setTraceCollapsed] = useState(true);
   const [traceEvents, setTraceEvents] = useState([]);
+  const [showPdfModal, setShowPdfModal] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -536,6 +538,11 @@ export default function App() {
     setTraceEvents([]);
   }, [sessionId]);
 
+  const handleDownloadPdf = useCallback(async () => {
+    if (!selectedAgent || conversation.length === 0) return;
+    await downloadConversationPdf(selectedAgent, conversation);
+  }, [selectedAgent, conversation]);
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar: Agent Gallery */}
@@ -624,6 +631,15 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleDownloadPdf}
+              className="btn-ghost text-[11px] px-3 py-2"
+              disabled={!selectedAgent || conversation.length === 0}
+              title="Download conversation PDF"
+            >
+              <Download size={14} className="mr-1" />
+              Download PDF
+            </button>
+            <button
               onClick={() => setLogCollapsed((c) => !c)}
               className="btn-ghost text-[11px] px-3 py-2"
               title="Toggle live log"
@@ -633,8 +649,12 @@ export default function App() {
             </button>
             <button
               onClick={() => {
-                setSelectedAgent(null);
-                setShowGallery(true);
+                if (conversation.length > 0) {
+                  setShowPdfModal(true);
+                } else {
+                  setSelectedAgent(null);
+                  setShowGallery(true);
+                }
               }}
               className="btn-ghost text-[11px] px-3 py-2 hidden lg:inline-flex items-center"
               title="Show gallery"
@@ -698,6 +718,41 @@ export default function App() {
                 <div className="creator-capsule"><span className="creator-capsule-text">AI Role Agents built by Mujeeb Mohammed</span></div>
           </div>
         </div>
+      {showPdfModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-sm w-full">
+            <h3 className="font-semibold text-slate-900 mb-2">Download Conversation PDF?</h3>
+            <p className="text-sm text-slate-600 mb-6">
+              You have an existing conversation. Download it as a PDF before switching agents?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  if (selectedAgent) await downloadConversationPdf(selectedAgent, conversation);
+                  setShowPdfModal(false);
+                  setSelectedAgent(null);
+                  setShowGallery(true);
+                  setConversation([]);
+                }}
+                className="btn-primary flex-1 text-[11px] px-4 py-2"
+              >
+                Download PDF & Switch
+              </button>
+              <button
+                onClick={() => {
+                  setShowPdfModal(false);
+                  setSelectedAgent(null);
+                  setShowGallery(true);
+                  setConversation([]);
+                }}
+                className="btn-ghost flex-1 text-[11px] px-4 py-2"
+              >
+                Continue Without Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </main>
     </div>
   );

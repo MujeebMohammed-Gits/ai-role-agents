@@ -56,6 +56,7 @@ TRACE_EVENT_TYPES = [
     "trace.critique.generate",
     "trace.self_correct.loop",
     "trace.validation.final",
+    "trace.web.search",
 ]
 
 

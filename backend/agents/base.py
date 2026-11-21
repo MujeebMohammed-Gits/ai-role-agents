@@ -13,6 +13,7 @@ WebSocket streaming to the frontend tracking panel.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -25,7 +26,7 @@ from core.hooks import Hooks
 from core.llm_client import LLMClient, build_client
 from core.memory import ConversationMemory
 from core.rag import RAGContext
-from core.web_research import search_web_sources
+from core.web_research import fetch_verified_videos, search_web_sources
 from core.trace import TraceEmitter
 from core.validation import ValidationState
 
@@ -200,10 +201,18 @@ class BaseAgent:
 
         # Phase 1: RAG Context Fetch.
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
-        top_k = max(6, settings.rag_top_k)
-        rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
-        web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        rag_res, web_res = await asyncio.gather(rag_task, web_task, return_exceptions=True)
+        top_k = 6
+        try:
+            rag_res, web_res = await asyncio.wait_for(
+                asyncio.gather(
+                    self.rag.retrieve(query, top_k=top_k, emitter=trace),
+                    search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace),
+                    return_exceptions=True,
+                ),
+                timeout=3.5,
+            )
+        except Exception:  # noqa: BLE001 — never abort streaming on context fetch
+            rag_res, web_res = [], []
         context = rag_res if isinstance(rag_res, list) else []
         web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
@@ -268,6 +277,11 @@ class BaseAgent:
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
             emit_log("info", f"Re-evaluation complete (loop {loop})",
                      {"score": evaluation.score, "passed": evaluation.passed})
+
+        # Close any unclosed code fence and strip markers from the final response.
+        if response.count("```") % 2 != 0:
+            response += "\n```"
+        response = re.sub("「[^」]*」", "", response)
 
         # Phase 7: Final JSON Validation.
         await trace_record("trace.validation.final", "validation", "validate",
@@ -396,10 +410,18 @@ class BaseAgent:
         # Phase 1: RAG Context Fetch.
         yield {"event": "phase", "data": {"phase": "rag_retrieve", "status": "start"}}
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
-        top_k = max(6, settings.rag_top_k)
-        rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
-        web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        rag_res, web_res = await asyncio.gather(rag_task, web_task, return_exceptions=True)
+        top_k = 6
+        try:
+            rag_res, web_res = await asyncio.wait_for(
+                asyncio.gather(
+                    self.rag.retrieve(query, top_k=top_k, emitter=trace),
+                    search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace),
+                    return_exceptions=True,
+                ),
+                timeout=3.5,
+            )
+        except Exception:  # noqa: BLE001 — never abort streaming on context fetch
+            rag_res, web_res = [], []
         context = rag_res if isinstance(rag_res, list) else []
         web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
@@ -441,8 +463,9 @@ class BaseAgent:
 
         response_chunks: list[str] = []
         async for chunk in self.llm.stream_complete(self.system_prompt, messages):
-            response_chunks.append(chunk)
-            yield {"event": "token", "data": chunk}
+            clean_chunk = re.sub("「[^」]*」", "", chunk)
+            response_chunks.append(clean_chunk)
+            yield {"event": "token", "data": clean_chunk}
         response = "".join(response_chunks)
         await self.hooks.run("after_llm", self.role, response)
         emit_log("info", "LLM response received", {"chars": len(response)})
@@ -489,6 +512,21 @@ class BaseAgent:
             gr = self.evaluator.apply_guardrails(response)
             response = gr.sanitized_response
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+
+        # Close any unclosed code fence, strip markers, append official videos.
+        if response.count("```") % 2 != 0:
+            response += "\n```"
+        response = re.sub("「[^」]*」", "", response)
+        if "### Official Organizational Video Briefings" not in response:
+            try:
+                videos = await fetch_verified_videos(emitter=trace)
+                if videos:
+                    video_lines = "\n".join(
+                        f"- [{v['title']}]({v['url']})" for v in videos[:2]
+                    )
+                    response += f"\n\n### Official Organizational Video Briefings\n\n{video_lines}"
+            except Exception:  # noqa: BLE001 — videos are best-effort
+                pass
 
         entry = await trace_record("trace.validation.final", "validation", "validate",
                                    score=evaluation.score, passed=evaluation.passed,

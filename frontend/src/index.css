@@ -398,7 +398,7 @@
 }
 .mermaid-viewport {
   width: 100% !important;
-  max-height: 440px !important;
+  max-height: 360px !important;
   overflow: auto !important;
   padding: 16px !important;
 }
