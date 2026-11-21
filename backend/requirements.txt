@@ -21,3 +21,4 @@ pypdf>=4.0.0
 # Optional real LLM providers (mock provider is the default, no key needed)
 openai>=1.16.0
 anthropic>=0.18.0
+beautifulsoup4>=4.12.0

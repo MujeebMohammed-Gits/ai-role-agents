@@ -64,7 +64,7 @@ class Settings:
 
     # RAG / vector store
     rag_enabled: bool = field(default_factory=lambda: _env_bool("RAG_ENABLED", True))
-    rag_top_k: int = field(default_factory=lambda: _env_int("RAG_TOP_K", 3))
+    rag_top_k: int = field(default_factory=lambda: _env_int("RAG_TOP_K", 6))
     vector_db_provider: str = field(default_factory=lambda: _env("VECTOR_DB_PROVIDER", "chromadb"))
     chroma_persist_dir: str = field(default_factory=lambda: _env("CHROMA_PERSIST_DIR", "./data/chroma"))
     chroma_collection: str = field(default_factory=lambda: _env("CHROMA_COLLECTION", "role_agents_knowledge"))
@@ -79,7 +79,7 @@ class Settings:
         "HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"))
 
     # Self-evaluation / self-improvement
-    evaluation_threshold: float = field(default_factory=lambda: _env_float("EVALUATION_THRESHOLD", 0.85))
+    evaluation_threshold: float = field(default_factory=lambda: _env_float("EVALUATION_THRESHOLD", 0.88))
     max_self_correction_loops: int = field(default_factory=lambda: _env_int("MAX_SELF_CORRECTION_LOOPS", 1))
     guardrails_enabled: bool = field(default_factory=lambda: _env_bool("GUARDRAILS_ENABLED", True))
     trace_streaming_enabled: bool = field(default_factory=lambda: _env_bool("TRACE_STREAMING_ENABLED", True))

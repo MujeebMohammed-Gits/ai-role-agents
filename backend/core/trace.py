@@ -89,3 +89,6 @@ class TraceEmitter:
                                data: dict[str, Any]) -> None:
         await self.emit("trace.validation.final", "validation", "validate",
                         score=score, data={**data, "passed": passed})
+
+    async def web_search(self, data: Optional[dict] = None) -> None:
+        await self.emit("trace.web.search", "rag_retrieve", "web_search", data=data or {})

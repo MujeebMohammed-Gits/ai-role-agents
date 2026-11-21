@@ -24,7 +24,7 @@ class LLMClient:
         system_prompt: str,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 1000,
+        max_tokens: int = 8192,
     ) -> str:
         raise NotImplementedError
 
@@ -33,7 +33,7 @@ class LLMClient:
         system_prompt: str,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 1000,
+        max_tokens: int = 8192,
     ):
         """Yield text chunks as they are produced by the provider.
 
@@ -89,7 +89,7 @@ class MockLLMClient(LLMClient):
         system_prompt: str,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 1000,
+        max_tokens: int = 8192,
     ) -> str:
         user_text = ""
         for m in reversed(messages):
@@ -187,7 +187,7 @@ class _OpenAILLMClient(LLMClient):
         system_prompt: str,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 1000,
+        max_tokens: int = 8192,
     ) -> str:
         chat = [{"role": "system", "content": system_prompt}] + messages
         resp = await self._client.chat.completions.create(
@@ -204,7 +204,7 @@ class _OpenAILLMClient(LLMClient):
         system_prompt: str,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ):
         full_messages = [{"role": "system", "content": system_prompt}] + [
             m for m in messages if m.get("role") != "system"
@@ -234,7 +234,7 @@ class _AnthropicLLMClient(LLMClient):
         system_prompt: str,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> str:
         system_msgs = [m for m in messages if m.get("role") == "system"]
         user_msgs = [m for m in messages if m.get("role") != "system"]
@@ -278,7 +278,7 @@ class _AnthropicLLMClient(LLMClient):
         system_prompt: str,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> AsyncIterator[str]:
         """Yield text chunks from the Anthropic stream, skipping thinking blocks.
 

@@ -25,6 +25,7 @@ from core.hooks import Hooks
 from core.llm_client import LLMClient, build_client
 from core.memory import ConversationMemory
 from core.rag import RAGContext
+from core.web_research import search_web_sources
 from core.trace import TraceEmitter
 from core.validation import ValidationState
 
@@ -50,6 +51,15 @@ class AgentResult:
     duration_ms: float
 
 
+QUALITY_DIRECTIVE = (
+    "\n\nRESPONSE QUALITY & GROUNDING STANDARDS:\n"
+    "1. Provide a complete, thorough, well-structured executive answer?never truncate mid-sentence.\n"
+    "2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N].\n"
+    "3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.\n"
+    "4. Where relevant, include curated links to official documentation, benchmark talks, or reference videos from the retrieved web sources (never fabricate URLs)."
+)
+
+
 class BaseAgent:
     def __init__(
         self,
@@ -66,7 +76,7 @@ class BaseAgent:
     ) -> None:
         self.role = role
         self.name = name
-        self.system_prompt = system_prompt
+        self.system_prompt = system_prompt + QUALITY_DIRECTIVE
         self.event_bus = event_bus
         self.blackboard = blackboard
         self.memory = memory
@@ -185,9 +195,19 @@ class BaseAgent:
 
         # Phase 1: RAG Context Fetch.
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
-        context = await self.rag.retrieve(query, top_k=settings.rag_top_k, emitter=trace)
-        emit_log("info", f"Retrieved {len(context)} context documents", {"count": len(context)})
-        context_text = "\n".join(f"[{c['source']}] {c['text'][:600]}" for c in context)
+        top_k = max(6, settings.rag_top_k)
+        context = await self.rag.retrieve(query, top_k=top_k, emitter=trace)
+        web_hits = await search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace)
+        for idx, wh in enumerate(web_hits, start=1):
+            context.append({
+                "id": f"web-{idx}",
+                "text": f"{wh['title']}: {wh['snippet']}",
+                "source": f"{wh['title']} ({wh['url']})",
+                "score": 0.92,
+                "metadata": wh,
+            })
+        emit_log("info", f"Retrieved {len(context)} grounded context sources (RAG + Web)", {"count": len(context), "web_count": len(web_hits)})
+        context_text = "\n".join(f"[{c['source']}] {c['text'][:750]}" for c in context)
 
         # Phase 2: Build LLM messages from system prompt, context and memory.
         history = self.memory.get(session_id, limit=settings.memory_max_messages)
@@ -368,9 +388,19 @@ class BaseAgent:
         # Phase 1: RAG Context Fetch.
         yield {"event": "phase", "data": {"phase": "rag_retrieve", "status": "start"}}
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
-        context = await self.rag.retrieve(query, top_k=settings.rag_top_k, emitter=trace)
-        emit_log("info", f"Retrieved {len(context)} context documents", {"count": len(context)})
-        context_text = "\n".join(f"[{c['source']}] {c['text'][:600]}" for c in context)
+        top_k = max(6, settings.rag_top_k)
+        context = await self.rag.retrieve(query, top_k=top_k, emitter=trace)
+        web_hits = await search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace)
+        for idx, wh in enumerate(web_hits, start=1):
+            context.append({
+                "id": f"web-{idx}",
+                "text": f"{wh['title']}: {wh['snippet']}",
+                "source": f"{wh['title']} ({wh['url']})",
+                "score": 0.92,
+                "metadata": wh,
+            })
+        emit_log("info", f"Retrieved {len(context)} grounded context sources (RAG + Web)", {"count": len(context), "web_count": len(web_hits)})
+        context_text = "\n".join(f"[{c['source']}] {c['text'][:750]}" for c in context)
         yield {
             "event": "phase",
             "data": {"phase": "rag_retrieve", "status": "complete", "documents": len(context)},
@@ -423,13 +453,36 @@ class BaseAgent:
             "data": {"phase": "guardrail", "status": "complete", "passed": gr.passed},
         }
 
-        # Phase 5/6: Evaluation + Critique/Self-Correction Loop.
+        # Phase 5/6: Evaluation + Critique/Self-Correction Loop (ensures Eval >= 88 & complete output).
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}
         evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+        loop = 0
+        while (self.evaluator.should_revise(evaluation) or evaluation.score < 88.0) and loop < max(2, self.evaluator.max_loops):
+            loop += 1
+            entry = await trace_record("trace.self_correct.loop", "self_correct", f"iterate_{loop}",
+                                       score=evaluation.score, data={"suggestions": evaluation.suggestions})
+            yield {"event": "trace", "data": entry}
+            yield {"event": "status", "data": {"message": f"Refining response quality (pass {loop})..."}}
+            critique = self.evaluator.generate_critique(self.role, query, context_text, response, evaluation)
+            critique += "\nEnsure the response is 100% complete (never cut off), includes clear citations with URLs, structured tables, and achieves an evaluation score above 90."
+            entry = await trace_record("trace.critique.generate", "critique", "generate",
+                                       data={"critique": critique, "iteration": loop})
+            yield {"event": "trace", "data": entry}
+            revision_messages = messages + [{"role": "user", "content": critique}]
+            rev_chunks: list[str] = []
+            yield {"event": "token", "data": "\n\n---\n### Refined & Verified Response\n\n"}
+            async for chunk in self.llm.stream_complete(self.system_prompt, revision_messages):
+                rev_chunks.append(chunk)
+                yield {"event": "token", "data": chunk}
+            response = "".join(rev_chunks)
+            gr = self.evaluator.apply_guardrails(response)
+            response = gr.sanitized_response
+            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+
         entry = await trace_record("trace.validation.final", "validation", "validate",
                                    score=evaluation.score, passed=evaluation.passed,
                                    data={"stage_scores": evaluation.stage_scores,
-                                         "loop_count": 0})
+                                         "loop_count": loop})
         yield {"event": "trace", "data": entry}
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
                                           "score": evaluation.score, "passed": evaluation.passed}}
@@ -486,7 +539,7 @@ class BaseAgent:
             "session_id": session_id,
             "score": evaluation.score,
             "validation_state": validation_state.value,
-            "loop_count": 0,
+            "loop_count": loop,
             "duration_ms": round(duration_ms, 2),
         })
 
