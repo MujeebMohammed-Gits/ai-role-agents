@@ -134,6 +134,23 @@ class SelfEvaluator:
     def criteria_for(self, role: str) -> list[str]:
         return self._criteria.get(role, ["response is relevant and complete"])
 
+    def required_sections_for(self, role: str) -> list[str]:
+        mapping = {
+            "delivery_management": ["Delivery Objective", "Risks & Blockers", "Proposed Timeline"],
+            "enterprise_agile_coach": ["Observation", "Agile Principle", "Coaching Questions"],
+            "scrum_master": ["Current Sprint State", "Impediment Log", "Scrum Event Guidance"],
+            "product_manager": ["Customer Problem", "Prioritization Rationale", "Success Metrics"],
+            "product_owner": ["Backlog Items", "Acceptance Criteria", "Definition of Ready"],
+            "business_analyst": ["Requirements Elicited", "As-Is Process", "To-Be Process"],
+            "user_research": ["Research Question", "Recommended Method", "Ethics"],
+            "devops_engineer": ["Pipeline Stages", "Deployment Strategy", "Rollback"],
+            "sre": ["SLOs & Error Budget", "Incident Response", "Postmortem"],
+            "platform_engineering": ["Golden Path", "Self-Service", "Guardrails"],
+            "programme_manager": ["Cross-Project Dependencies", "Program Risks", "Benefits Realization"],
+            "management_consultant": ["Problem Frame", "Issue Tree", "Implementation Roadmap"],
+        }
+        return mapping.get(role, ["Executive Summary", "Key Recommendations", "Next Steps"])
+
     # ------------------------------------------------------------------ guardrails
 
     def apply_guardrails(self, response: str) -> GuardrailResult:

@@ -56,7 +56,7 @@ QUALITY_DIRECTIVE = (
     "1. Provide a complete, thorough, well-structured executive answer?never truncate mid-sentence.\n"
     "2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N].\n"
     "3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.\n"
-    "4. Where relevant, include curated links to official documentation, benchmark talks, or reference videos from the retrieved web sources (never fabricate URLs)."
+    "4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).\n""5. Keep tables concise (max 5 rows) and always finish every section and closing summary cleanly before reaching token limits."
 )
 
 
@@ -76,7 +76,12 @@ class BaseAgent:
     ) -> None:
         self.role = role
         self.name = name
-        self.system_prompt = system_prompt + QUALITY_DIRECTIVE
+        req_secs = ", ".join(f"## {s}" for s in evaluator.required_sections_for(role))
+        role_contract = (
+            f"\n6. MANDATORY STRUCTURE FOR {self.name.upper()}: Include clear Markdown headings covering: {req_secs}.\n"
+            "7. Always combine BOTH numbered action steps (1. 2. 3.) AND bulleted insights (- ) in every response, and cite retrieved RAG/Web sources inline."
+        )
+        self.system_prompt = system_prompt + QUALITY_DIRECTIVE + role_contract
         self.event_bus = event_bus
         self.blackboard = blackboard
         self.memory = memory
@@ -196,8 +201,11 @@ class BaseAgent:
         # Phase 1: RAG Context Fetch.
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
         top_k = max(6, settings.rag_top_k)
-        context = await self.rag.retrieve(query, top_k=top_k, emitter=trace)
-        web_hits = await search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace)
+        rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
+        web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
+        rag_res, web_res = await asyncio.gather(rag_task, web_task, return_exceptions=True)
+        context = rag_res if isinstance(rag_res, list) else []
+        web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
             context.append({
                 "id": f"web-{idx}",
@@ -389,8 +397,11 @@ class BaseAgent:
         yield {"event": "phase", "data": {"phase": "rag_retrieve", "status": "start"}}
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
         top_k = max(6, settings.rag_top_k)
-        context = await self.rag.retrieve(query, top_k=top_k, emitter=trace)
-        web_hits = await search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace)
+        rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
+        web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
+        rag_res, web_res = await asyncio.gather(rag_task, web_task, return_exceptions=True)
+        context = rag_res if isinstance(rag_res, list) else []
+        web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
             context.append({
                 "id": f"web-{idx}",
@@ -457,7 +468,7 @@ class BaseAgent:
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}
         evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
         loop = 0
-        while (self.evaluator.should_revise(evaluation) or evaluation.score < 88.0) and loop < max(2, self.evaluator.max_loops):
+        while self.evaluator.should_revise(evaluation) and loop < 1:
             loop += 1
             entry = await trace_record("trace.self_correct.loop", "self_correct", f"iterate_{loop}",
                                        score=evaluation.score, data={"suggestions": evaluation.suggestions})
