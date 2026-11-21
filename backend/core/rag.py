@@ -241,13 +241,13 @@ class RAGContext:
         headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"https://huggingface.co{model}/pipeline/feature-extraction",
+                f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction",
                 headers=headers,
                 json={"inputs": text}
             )
             resp.raise_for_status()
             vec = resp.json()
-            if isinstance(vec, list) and vec and isinstance(vec, list):
+            while isinstance(vec, list) and vec and isinstance(vec, list):
                 vec = vec
             return [float(x) for x in vec]
 
