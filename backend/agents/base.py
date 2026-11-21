@@ -27,7 +27,7 @@ from core.hooks import Hooks
 from core.llm_client import LLMClient, build_client
 from core.memory import ConversationMemory
 from core.rag import RAGContext
-from core.web_research import search_web_sources
+from core.web_research import search_web_sources, CURATED_OFFICIAL_VIDEOS
 from core.trace import TraceEmitter
 from core.validation import ValidationState
 
@@ -508,6 +508,17 @@ class BaseAgent:
 
         # Deterministically append verified official video embeds if not already present in response
         official_vids = [c.get("metadata", {}) for c in context if c.get("metadata", {}).get("kind") == "video"]
+        if not official_vids:
+            q_low = query.lower()
+            scored_curated = sorted(
+                CURATED_OFFICIAL_VIDEOS,
+                key=lambda item: sum(1 for t in item if t in q_low),
+                reverse=True,
+            )
+            official_vids = [
+                {"title": f"{org} ? {ttl}", "url": url, "kind": "video"}
+                for org, _, ttl, url, _ in scored_curated[:2]
+            ]
         missing_vids = [v for v in official_vids if v.get("url") and v["url"] not in response]
         if missing_vids:
             vid_md = "\n\n### Official Organizational Video Briefings\n\n" + "\n\n".join(
