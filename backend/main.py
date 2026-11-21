@@ -34,6 +34,10 @@ async def start_mesh() -> None:
     try:
         orchestrator = Orchestrator()
         orchestrator.register_roles()
+        try:
+            await orchestrator.rag.warmup()
+        except Exception:
+            pass
         await orchestrator.start()
         _bind(orchestrator)
         logger.info("Multi-agent mesh is always-on with %d agents", len(orchestrator.agents))

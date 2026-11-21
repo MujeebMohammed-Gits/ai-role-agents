@@ -1,57 +1,31 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import mermaid from 'mermaid';
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  suppressErrorRendering: true,
-  securityLevel: 'loose',
-  themeVariables: { fontSize: '13px' },
-  flowchart: { nodeSpacing: 32, rankSpacing: 36, padding: 12, useMaxWidth: false },
+marked.setOptions({
+  breaks: true,
+  gfm: true,
 });
 
-function escapeHtml(unsafe) {
-  return String(unsafe)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-// Sanitize common LLM Mermaid syntax quirks before rendering. LLM-generated
-// diagrams often emit unquoted node labels with parentheses or special
-// characters (e.g. `A[Text (Note)]`), which Mermaid rejects. Wrap those
-// labels in quotes so they parse cleanly: `A["Text (Note)"]`.
 function sanitizeMermaid(source) {
   let text = String(source || '').replace(/\r\n/g, '\n').trim();
-  // Ensure newline after diagram header (e.g., "stateDiagram-v2 [*] --> A" -> "stateDiagram-v2\n[*] --> A")
   text = text.replace(/^(stateDiagram-v2|stateDiagram|flowchart\s+[A-Z]{2}|graph\s+[A-Z]{2}|sequenceDiagram|gantt|classDiagram|erDiagram)\s+(?!\n)/i, '$1\n');
-
   const isStateDiagram = /^stateDiagram/i.test(text);
 
   return text.split('\n').map((rawLine) => {
     let line = rawLine.trim();
     if (!line) return '';
-
     if (isStateDiagram) {
-      // Fix invalid LLM syntax: state "Idea_Ideation" --> Next : Label  ==>  Idea_Ideation --> Next : Label
       line = line.replace(/^state\s+"([^"]+)"\s*(-->|->)/, (_, sName, arrow) => {
         const cleanId = sName.replace(/[^A-Za-z0-9_]/g, '_');
         return `${cleanId} ${arrow}`;
       });
-      // Replace Unicode comparison symbols in state transition labels that break Mermaid v10/v11 parser
       line = line.replace(/\u2265/g, '>=').replace(/\u2264/g, '<=').replace(/\u2260/g, '!=').replace(/\u2192/g, 'to');
-      // Wrap transition labels containing special characters in quotes if needed
       line = line.replace(/^([^:\n]+:\s*)(.+)$/, (m, prefix, lbl) => {
         const cleanLbl = lbl.replace(/"/g, "'").trim();
         return `${prefix}${cleanLbl}`;
       });
       return line;
     }
-
-    // Flowchart / graph node label quoting
     return line.replace(
       /([A-Za-z_][\w\-]*)\[(".*?"|'.*?'|[^\]]*)\]/g,
       (match, id, label) => {
@@ -71,81 +45,30 @@ function sanitizeMermaid(source) {
 export function renderMarkdown(text) {
   if (!text) return '';
 
-  const renderer = new marked.Renderer();
+  let cleaned = String(text).replace(/\u3010[^\u3011]*\u3011/g, '');
 
-  // External links open in a new tab. [video](url) becomes an embedded player.
-  const originalLink = renderer.link;
-  renderer.link = function (href, title, text) {
-    if (text && String(text).trim().toLowerCase() === 'video') {
-      return `<div class="video-wrapper my-3"><iframe class="w-full h-64" src="${escapeHtml(href)}" frameborder="0" allowfullscreen loading="lazy" sandbox="allow-same-origin allow-scripts"></iframe></div>`;
-    }
-    const html = originalLink.call(this, href, title, text);
-    if (href.startsWith('http://') || href.startsWith('https://')) {
-      return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
-    }
-    return html;
-  };
-
-  // Responsive images with rounded styling.
-  const originalImage = renderer.image;
-  renderer.image = function (href, title, text) {
-    const html = originalImage.call(this, href, title, text);
-    return html.replace('<img ', '<img class="rounded-lg max-w-full my-3" ');
-  };
-
-  // Mermaid code blocks become placeholders that are rendered as SVG once the
-  // stream closes (see renderMermaidDiagrams / MessageBubble).
-  const originalCode = renderer.code;
-  renderer.code = function (codeOrToken, language) {
-    const rawCode = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.text : codeOrToken;
-    const rawLang = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.lang : language;
-    if (rawLang != null && String(rawLang).trim().toLowerCase() === 'mermaid') {
-      return `<div class="mermaid-placeholder"><div class="mermaid-loading">Rendering workflow diagram...</div><div class="mermaid-source">${escapeHtml(rawCode)}</div></div>`;
-    }
-    return originalCode.apply(this, arguments);
-  };
-
-  let html = marked.parse(text, {
-    mangle: false,
-    headerIds: false,
-    breaks: true,
-    renderer,
+  cleaned = cleaned.replace(/```mermaid\s*([\s\(\S\)]*?)```/gi, (_, code) => {
+    const sanitized = sanitizeMermaid(code);
+    const encoded = encodeURIComponent(sanitized);
+    return `<div class="mermaid-placeholder" data-mermaid="${encoded}"><div class="mermaid-viewport" style="overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;"><pre class="text-xs text-slate-600">${sanitized}</pre></div></div>`;
   });
 
-  // Convert anchor-wrapped or bare YouTube URLs cleanly into responsive embedded iframes.
-  html = html.replace(
+  const rawHtml = marked.parse(cleaned);
+  let safeHtml = DOMPurify.sanitize(rawHtml, {
+    ADD_ATTR: ['target', 'rel', 'class', 'data-mermaid', 'style'],
+  });
+
+  safeHtml = safeHtml.replace(
     /<a[^>]+href="https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^"]*"[^>]*>(.*?)<\/a>/gi,
-    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$1" title="$2" referrerpolicy="strict-origin-when-cross-origin" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
-  );
-  html = html.replace(
-    /(?<!src="|href=")(https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11}))/g,
-    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/$2" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
-  );
-
-  html = html.replace(
-    /<a[^>]+href="https?:\/\/(?:www\.)?youtube\.com\/playlist\?list=([a-zA-Z0-9_-]+)[^"]*"[^>]*>(.*?)<\/a>/gi,
-    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><iframe class="w-full aspect-video h-72" src="https://www.youtube.com/embed/videoseries?list=$1" title="$2" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" frameborder="0" allowfullscreen loading="lazy"></iframe><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
-  );
-  // Convert direct .mp4 / .webm video links into playable HTML5 video players
-  html = html.replace(
-    /<a[^>]+href="(https?:\/\/[^"]+\.(?:mp4|webm|ogg)(?:\?[^"]*)?)"[^>]*>(.*?)<\/a>/gi,
-    '<div class="video-wrapper my-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-900"><video class="w-full max-h-80" controls preload="metadata" src="$1"></video><div class="px-3 py-2 text-xs font-medium text-slate-200 bg-slate-800">$2</div></div>'
+    '<div class="video-wrapper my-4 rounded-xl overflow-hidden border border-slate-200 bg-slate-900 shadow-xs">' +
+      `<iframe class="w-full aspect-video" style="height:315px;width:100%;" src="https://www.youtube.com/embed/$1" title="$2" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>` +
+      '<div class="px-3.5 py-2 text-xs font-medium text-slate-100 bg-slate-800 flex items-center justify-between"><span>Play: $2</span><span class="text-indigo-300">Official Reference</span></div>' +
+    '</div>'
   );
 
-  return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'rel', 'class', 'allowfullscreen', 'loading', 'frameborder', 'src', 'allow', 'referrerpolicy', 'title', 'controls', 'preload'],
-    ADD_TAGS: ['iframe', 'video', 'source'],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-  });
+  return safeHtml;
 }
 
-/**
- * Render any `.mermaid-placeholder` nodes inside `container` as inline SVG
- * diagrams using mermaid.render. Safe to call repeatedly; already-rendered
- * placeholders are skipped via a data attribute. Intended to run after a
- * streaming message has finished so the placeholder stays visible during the
- * stream.
- */
 export function renderMermaidDiagrams(container) {
   if (!container) return;
 

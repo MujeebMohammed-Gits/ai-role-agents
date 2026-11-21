@@ -1,3 +1,4 @@
+import re
 """Base role agent with production-grade deterministic cognitive cycle.
 
 Every role agent runs queries through the cycle:
@@ -57,7 +58,8 @@ QUALITY_DIRECTIVE = (
     "2. Ground insights across ALL retrieved evidence tiers ? Internal Qdrant RAG [Reference #N], Peer-Reviewed Journals & Research Papers [Journal Title](DOI/URL), Official Organizational Articles [Title](URL), and Reference Media ? citing sources inline.\n"
     "3. VISUAL FIGURES & DIAGRAMS: Always include at least one clean, valid ```mermaid flowchart TD visual architecture/workflow diagram (using simple alphanumeric node IDs and quoted labels like A[\"Step 1\"] --> B[\"Step 2\"]) plus structured Markdown comparison tables.\n"
     "4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).\n""5. Keep tables concise (max 5 rows) and always finish every section and closing summary cleanly before reaching token limits.\n"
-"6. EMBEDDED VIDEOS: ONLY include YouTube URLs explicitly marked VERIFIED_OFFICIAL_VIDEO in the retrieved context (format: [Video: Title](URL) on its own line). NEVER guess, invent, or output any YouTube URL not present in the retrieved context."
+"6. NEVER output raw bracket markers like [1+L1-L12]. Cite sources strictly with standard Markdown links [Title](URL) or (Reference #N).\n"
+        "7. EMBEDDED VIDEOS: ONLY include YouTube URLs explicitly marked VERIFIED_OFFICIAL_VIDEO in the retrieved context (format: [Video: Title](URL) on its own line). NEVER guess, invent, or output any YouTube URL not present in the retrieved context."
 )
 
 
@@ -204,7 +206,7 @@ class BaseAgent:
         top_k = max(6, settings.rag_top_k)
         rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
         web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        rag_res, web_res = await asyncio.gather(rag_task, web_task, return_exceptions=True)
+        rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
         context = rag_res if isinstance(rag_res, list) else []
         web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
@@ -400,7 +402,7 @@ class BaseAgent:
         top_k = max(6, settings.rag_top_k)
         rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
         web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        rag_res, web_res = await asyncio.gather(rag_task, web_task, return_exceptions=True)
+        rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
         context = rag_res if isinstance(rag_res, list) else []
         web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
@@ -443,7 +445,9 @@ class BaseAgent:
         response_chunks: list[str] = []
         async for chunk in self.llm.stream_complete(self.system_prompt, messages):
             response_chunks.append(chunk)
-            yield {"event": "token", "data": chunk}
+            clean_chunk = re.sub(r"\u3010[^\u3011]*\u3011", "", chunk)
+                if clean_chunk:
+                    yield {"event": "token", "data": clean_chunk}
         response = "".join(response_chunks)
         await self.hooks.run("after_llm", self.role, response)
         emit_log("info", "LLM response received", {"chars": len(response)})
@@ -485,8 +489,10 @@ class BaseAgent:
             yield {"event": "token", "data": "\n\n---\n### Refined & Verified Response\n\n"}
             async for chunk in self.llm.stream_complete(self.system_prompt, revision_messages):
                 rev_chunks.append(chunk)
-                yield {"event": "token", "data": chunk}
-            response = "".join(rev_chunks)
+                clean_chunk = re.sub(r"\u3010[^\u3011]*\u3011", "", chunk)
+                if clean_chunk:
+                    yield {"event": "token", "data": clean_chunk}
+            response = re.sub(r"\u3010[^\u3011]*\u3011", "", "".join(rev_chunks))
             gr = self.evaluator.apply_guardrails(response)
             response = gr.sanitized_response
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
