@@ -57,7 +57,7 @@ QUALITY_DIRECTIVE = (
     "2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N].\n"
     "3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.\n"
     "4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).\n""5. Keep tables concise (max 5 rows) and always finish every section and closing summary cleanly before reaching token limits.\n"
-"6. EMBEDDED VIDEOS: When Verified Video URLs (https://youtube.com...) appear in the retrieved context, include 1-2 relevant video links on their own line as [Video: Title](https://youtube.comID) so the UI embeds the playable video directly. Never invent YouTube URLs."
+"6. EMBEDDED VIDEOS: When Verified Video URLs (https://www.youtube.com/watch?v=...) appear in the retrieved context, include 1-2 relevant video links on their own line as [Video: Title](https://www.youtube.com/watch?v=ID) so the UI embeds the playable video directly. Never invent YouTube URLs."
 )
 
 

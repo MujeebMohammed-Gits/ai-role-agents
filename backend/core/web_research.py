@@ -47,7 +47,7 @@ async def search_youtube_videos(query: str, max_videos: int = 2) -> list[dict]:
                             seen.add(vid)
                             videos.append({
                                 "title": title,
-                                "url": f"https://youtube.com{vid}",
+                                "url": f"https://www.youtube.com/watch?v={vid}",
                                 "video_id": vid,
                             })
                             if len(videos) >= max_videos:
@@ -66,7 +66,7 @@ async def search_web_sources(query: str, max_results: int = 4, emitter: Optional
             follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
         ) as client:
-            resp = await client.post("https://duckduckgo.com", data={"q": query})
+            resp = await client.post("https://html.duckduckgo.com/html/", data={"q": query})
             resp.raise_for_status()
             raw_html = resp.text
             links = re.findall(r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', raw_html, flags=re.S | re.I)
