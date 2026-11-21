@@ -55,12 +55,10 @@ class AgentResult:
 
 QUALITY_DIRECTIVE = (
     "\n\nRESPONSE QUALITY & GROUNDING STANDARDS:\n"
-    "1. Provide a complete, thorough, well-structured executive answer?never truncate mid-sentence.\n"
-    "2. Ground insights across ALL retrieved evidence tiers ? Internal Qdrant RAG [Reference #N], Peer-Reviewed Journals & Research Papers [Journal Title](DOI/URL), Official Organizational Articles [Title](URL), and Reference Media ? citing sources inline.\n"
-    "3. VISUAL FIGURES & DIAGRAMS: Always include at least one clean, valid ```mermaid flowchart TD visual architecture/workflow diagram (using simple alphanumeric node IDs and quoted labels like A[\"Step 1\"] --> B[\"Step 2\"]) plus structured Markdown comparison tables.\n"
-    "4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).\n""5. Keep tables concise (max 5 rows) and always finish every section and closing summary cleanly before reaching token limits.\n"
-"6. NEVER output raw bracket markers like [1+L1-L12]. Cite sources strictly with standard Markdown links [Title](URL) or (Reference #N).\n"
-        "7. EMBEDDED VIDEOS: ONLY include YouTube URLs explicitly marked VERIFIED_OFFICIAL_VIDEO in the retrieved context (format: [Video: Title](URL) on its own line). NEVER guess, invent, or output any YouTube URL not present in the retrieved context."
+    "1. Deliver a well-organized, complete, executive-ready answer (600-900 words) that finishes cleanly with a clear Closing Recommendation?never leave sentences or tables unfinished.\n"
+    "2. Ground insights in Retrieved RAG Context [Reference #N], Peer-Reviewed Journals, and Official Organizational Articles [Title](URL) with inline citations.\n"
+    "3. Include ONE compact, clean ```mermaid flowchart TD diagram (max 7 nodes, simple IDs like A[\"Step 1\"] --> B[\"Step 2\"]) and ONE concise Markdown summary table (max 4 rows).\n"
+    "4. NEVER output raw bracket markers like [1+L1-L12] or invent URLs."
 )
 
 
@@ -482,7 +480,7 @@ class BaseAgent:
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}
         evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
         loop = 0
-        while self.evaluator.should_revise(evaluation) and loop < 1:
+        while False and self.evaluator.should_revise(evaluation) and loop < 1:
             loop += 1
             entry = await trace_record("trace.self_correct.loop", "self_correct", f"iterate_{loop}",
                                        score=evaluation.score, data={"suggestions": evaluation.suggestions})

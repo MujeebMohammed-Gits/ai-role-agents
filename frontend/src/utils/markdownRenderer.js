@@ -145,7 +145,9 @@ export function renderMermaidDiagrams(container) {
       const label = placeholder.querySelector('.mermaid-zoom-level');
       if (svgEl) {
         svgEl.removeAttribute('style');
-        svgEl.style.maxWidth = 'none';
+        svgEl.style.maxWidth = '100%';
+        svgEl.style.maxHeight = '360px';
+        svgEl.style.width = 'auto';
         svgEl.style.height = 'auto';
         svgEl.style.display = 'block';
         svgEl.style.margin = '0 auto';
