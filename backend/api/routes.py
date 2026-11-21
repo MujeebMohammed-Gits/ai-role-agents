@@ -51,6 +51,7 @@ async def _broadcast(connections: list[WebSocket], message: dict) -> None:
 
 TRACE_EVENT_TYPES = [
     "trace.rag.retrieve",
+    "trace.web.search",
     "trace.agent.thought",
     "trace.guardrail.evaluate",
     "trace.critique.generate",

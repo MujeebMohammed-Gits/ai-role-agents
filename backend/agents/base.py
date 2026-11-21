@@ -76,7 +76,7 @@ class BaseAgent:
     ) -> None:
         self.role = role
         self.name = name
-        req_secs = ", ".join(f"## {s}" for s in self.evaluator.required_sections_for(role))
+        req_secs = ", ".join(f"## {s}" for s in evaluator.required_sections_for(role))
         role_contract = (
             f"\n6. MANDATORY STRUCTURE FOR {name.upper()}: Include clear Markdown headings covering: {req_secs}.\n"
             "7. Always combine BOTH numbered action steps (1. 2. 3.) AND bulleted insights (- ) in every response, and cite retrieved RAG/Web sources inline."
