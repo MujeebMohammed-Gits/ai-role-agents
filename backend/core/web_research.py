@@ -99,10 +99,10 @@ VERIFIED_OFFICIAL_FEEDS = [
 
 # Verified, publicly embeddable official conference & engineering talks (guaranteed playable fallback)
 CURATED_OFFICIAL_VIDEOS = [
-    ("GOTO Conferences", "g00-v20-210", "Agile & Delivery Leadership", "https://youtube.com", ["agile", "scrum", "product", "delivery", "leadership", "roadmap", "manager"]),
-    ("Google Cloud Tech", "sre-101", "Site Reliability Engineering (SRE) & SLOs", "https://youtube.com", ["sre", "reliability", "incident", "slo", "cloud", "platform", "devops", "ai"]),
-    ("NVIDIA", "nvidia-ai-ent", "Enterprise AI & Agentic Systems Architecture", "https://youtube.com", ["ai", "agent", "llm", "rag", "ml", "mlops", "delivery", "enterprise"]),
-    ("Atlassian", "atlassian-agile", "Modern Agile Delivery & Kanban Flow", "https://youtube.com", ["agile", "kanban", "jira", "sprint", "scrum", "delivery", "team", "backlog"]),
+    ("GOTO Conferences", "g00-v20-210", "Agile & Delivery Leadership", "https://www.youtube.com/watch?v=g00-v20-210", ["agile", "scrum", "product", "delivery", "leadership", "roadmap", "manager"]),
+    ("Google Cloud Tech", "sre-101", "Site Reliability Engineering (SRE) & SLOs", "https://www.youtube.com/watch?v=sre-101", ["sre", "reliability", "incident", "slo", "cloud", "platform", "devops", "ai"]),
+    ("NVIDIA", "nvidia-ai-ent", "Enterprise AI & Agentic Systems Architecture", "https://www.youtube.com/watch?v=nvidia-ai-ent", ["ai", "agent", "llm", "rag", "ml", "mlops", "delivery", "enterprise"]),
+    ("Atlassian", "atlassian-agile", "Modern Agile Delivery & Kanban Flow", "https://www.youtube.com/watch?v=atlassian-agile", ["agile", "kanban", "jira", "sprint", "scrum", "delivery", "team", "backlog"]),
 ]
 
 
@@ -133,9 +133,9 @@ async def search_youtube_videos(query: str, max_videos: int = 2) -> list[dict]:
                     t_words = set(re.findall(r"[a-z0-9]+", title.lower()))
                     score = len(q_words & t_words) + 2
                     candidates.append((score, {
-                        "title": f"{org_name} ? {title}",
+                        "title": f"{org_name} — {title}",
                         "url": f"https://www.youtube.com/watch?v={vid}",
-                        "snippet": f"VERIFIED_OFFICIAL_VIDEO by {org_name}: {title} -> https://www.youtube.com/watch?v={vid}",
+                        "snippet": f"{org_name}: {title} — https://www.youtube.com/watch?v={vid}",
                         "kind": "video",
                         "channel": org_name,
                     }))
@@ -146,9 +146,9 @@ async def search_youtube_videos(query: str, max_videos: int = 2) -> list[dict]:
         for org_name, _, title, url, tags in CURATED_OFFICIAL_VIDEOS:
             score = len(q_words & set(tags))
             candidates.append((score, {
-                "title": f"{org_name} ? {title}",
+                "title": f"{org_name} — {title}",
                 "url": url,
-                "snippet": f"VERIFIED_OFFICIAL_VIDEO by {org_name}: {title} -> {url}",
+                "snippet": f"{org_name}: {title} — {url}",
                 "kind": "video",
                 "channel": org_name,
             }))

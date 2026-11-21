@@ -90,7 +90,7 @@ export function renderMarkdown(text) {
     return (
       `<div class="mermaid-placeholder my-3">` +
         `<pre class="mermaid-source" style="display:none;">${esc}</pre>` +
-        `<div class="mermaid-viewport" style="overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">` +
+        `<div class="mermaid-viewport" style="border:1px solid #e2e8f0;border-radius:0.75rem;overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">` +
           `<pre class="text-xs text-slate-600">${esc}</pre>` +
         `</div>` +
       `</div>`
@@ -136,7 +136,7 @@ export function renderMermaidDiagrams(container) {
             <button type="button" class="mermaid-zoom-btn" data-action="reset" title="Reset zoom">Reset</button>
           </div>
         </div>
-        <div class="mermaid-viewport" style="overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">
+        <div class="mermaid-viewport" style="border:1px solid #e2e8f0;border-radius:0.75rem;overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">
           <div class="mermaid-canvas">${svg}</div>
         </div>
       `;

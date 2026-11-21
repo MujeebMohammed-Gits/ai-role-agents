@@ -160,11 +160,11 @@ async def stream_query(request: QueryRequest) -> StreamingResponse:
                 kind = ev.get("event", "status")
                 data = ev.get("data", {})
                 if kind == "final":
-                    yield f"event: done\ndata: {json.dumps(data)}\n\n"
+                    yield f"event: done\ndata: {json.dumps(data, default=str)}\n\n"
                 elif kind == "token":
-                    yield f"event: token\ndata: {json.dumps(data)}\n\n"
+                    yield f"event: token\ndata: {json.dumps(data, default=str)}\n\n"
                 else:
-                    yield f"event: status\ndata: {json.dumps(data)}\n\n"
+                    yield f"event: status\ndata: {json.dumps(data, default=str)}\n\n"
         except Exception as exc:
             yield f"event: error\ndata: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
 

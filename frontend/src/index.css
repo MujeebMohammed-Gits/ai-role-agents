@@ -401,6 +401,8 @@
   max-height: 440px !important;
   overflow: auto !important;
   padding: 16px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 0.75rem !important;
 }
 .mermaid-canvas {
   display: inline-block !important;

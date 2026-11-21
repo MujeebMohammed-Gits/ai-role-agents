@@ -21,3 +21,29 @@ chroma/
 
 *.tar.gz
 backend/data/chroma/
+
+# LinkedIn demo recording artifacts
+ai-role-agents-demo.mp4
+demo_raw/
+demo_audio/
+
+# Executive showcase recording artifacts
+ai-role-agents-showcase.mp4
+showcase_raw/
+showcase_audio/
+
+# Platform tour recording artifacts
+ai-role-agents-platform-tour.mp4
+tour_raw/
+tour_audio/
+
+# Delivery showcase recording artifacts
+ai-role-agents-delivery-showcase.mp4
+delivery_raw/
+delivery_audio/
+
+# Full-story delivery recording artifacts
+ai-role-agents-delivery-full-story.mp4
+story_raw/
+story_audio/
+story_slides/

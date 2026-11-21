@@ -55,9 +55,9 @@ class AgentResult:
 
 QUALITY_DIRECTIVE = (
     "\n\nRESPONSE QUALITY & GROUNDING STANDARDS:\n"
-    "1. Deliver a well-organized, complete, executive-ready answer (600-900 words) that finishes cleanly with a clear Closing Recommendation?never leave sentences or tables unfinished.\n"
-    "2. Ground insights in Retrieved RAG Context [Reference #N], Peer-Reviewed Journals, and Official Organizational Articles [Title](URL) with inline citations.\n"
-    "3. Include ONE compact, clean ```mermaid flowchart TD diagram (max 7 nodes, simple IDs like A[\"Step 1\"] --> B[\"Step 2\"]) and ONE concise Markdown summary table (max 4 rows).\n"
+    "1. Deliver a well-organized, complete, executive-ready answer that finishes cleanly with a clear Closing Recommendation—never leave sentences or tables unfinished.\n"
+    "2. Ground insights in Retrieved RAG Context, Peer-Reviewed Journals, and Official Organizational Articles [Title](URL) with inline citations.\n"
+    "3. Include ONE compact, clean ```mermaid flowchart TD diagram (max 7 nodes, quoted labels) and ONE concise Markdown summary table (max 5 rows).\n"
     "4. NEVER output raw bracket markers like [1+L1-L12] or invent URLs."
 )
 
@@ -478,9 +478,18 @@ class BaseAgent:
 
         # Phase 5/6: Evaluation + Critique/Self-Correction Loop (ensures Eval >= 88 & complete output).
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}
-        evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+        try:
+            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+        except Exception as exc:  # noqa: BLE001 — never let a downstream failure drop the stream
+            logger.exception("evaluation failed: %s", exc)
+            evaluation = EvaluationResult(
+                passed=False,
+                score=0.0,
+                feedback=f"Evaluation unavailable ({exc}).",
+                needs_revision=False,
+            )
         loop = 0
-        while False and self.evaluator.should_revise(evaluation) and loop < 1:
+        while self.evaluator.should_revise(evaluation) and loop < self.evaluator.max_loops:
             loop += 1
             entry = await trace_record("trace.self_correct.loop", "self_correct", f"iterate_{loop}",
                                        score=evaluation.score, data={"suggestions": evaluation.suggestions})
@@ -515,8 +524,8 @@ class BaseAgent:
                 reverse=True,
             )
             official_vids = [
-                {"title": f"{org} ? {ttl}", "url": url, "kind": "video"}
-                for org, _, ttl, url, _ in scored_curated[:2]
+                {"title": f"{org} — {ttl}", "url": f"https://www.youtube.com/watch?v={vid}", "kind": "video"}
+                for org, vid, ttl, _url, _tags in scored_curated[:2]
             ]
         missing_vids = [v for v in official_vids if v.get("url") and v["url"] not in response]
         if missing_vids:
@@ -527,13 +536,16 @@ class BaseAgent:
             response = response + vid_md
             yield {"event": "token", "data": vid_md}
 
-        entry = await trace_record("trace.validation.final", "validation", "validate",
-                                   score=evaluation.score, passed=evaluation.passed,
-                                   data={"stage_scores": evaluation.stage_scores,
-                                         "loop_count": loop})
-        yield {"event": "trace", "data": entry}
-        yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
-                                          "score": evaluation.score, "passed": evaluation.passed}}
+        try:
+            entry = await trace_record("trace.validation.final", "validation", "validate",
+                                       score=evaluation.score, passed=evaluation.passed,
+                                       data={"stage_scores": evaluation.stage_scores,
+                                             "loop_count": loop})
+            yield {"event": "trace", "data": entry}
+            yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
+                                              "score": evaluation.score, "passed": evaluation.passed}}
+        except Exception as exc:  # noqa: BLE001 — never let validation.final drop the stream
+            logger.exception("validation.final failed: %s", exc)
 
         # Phase 7: Final JSON Validation.
         if evaluation.passed:
