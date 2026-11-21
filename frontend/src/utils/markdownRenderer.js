@@ -1,14 +1,33 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import mermaid from 'mermaid';
+
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'loose',
+  fontFamily: 'Inter, system-ui, sans-serif',
+});
 
 marked.setOptions({
   breaks: true,
   gfm: true,
 });
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function sanitizeMermaid(source) {
   let text = String(source || '').replace(/\r\n/g, '\n').trim();
-  text = text.replace(/^(stateDiagram-v2|stateDiagram|flowchart\s+[A-Z]{2}|graph\s+[A-Z]{2}|sequenceDiagram|gantt|classDiagram|erDiagram)\s+(?!\n)/i, '$1\n');
+  text = text.replace(
+    /^(stateDiagram-v2|stateDiagram|flowchart\s+[A-Z]{2}|graph\s+[A-Z]{2}|sequenceDiagram|gantt|classDiagram|erDiagram)\s+(?!\n)/i,
+    '$1\n'
+  );
   const isStateDiagram = /^stateDiagram/i.test(text);
 
   return text.split('\n').map((rawLine) => {
@@ -45,19 +64,37 @@ function sanitizeMermaid(source) {
 export function renderMarkdown(text) {
   if (!text) return '';
 
+  // Strip raw OpenAI/NIM vector file-search artifacts
   let cleaned = String(text).replace(/\u3010[^\u3011]*\u3011/g, '');
 
+  // Extract mermaid blocks into placeholder containers before Marked parses Markdown
+  const mermaidBlocks = [];
   cleaned = cleaned.replace(/```mermaid\s*([\s\(\S\)]*?)```/gi, (_, code) => {
-    const sanitized = sanitizeMermaid(code);
-    const encoded = encodeURIComponent(sanitized);
-    return `<div class="mermaid-placeholder" data-mermaid="${encoded}"><div class="mermaid-viewport" style="overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;"><pre class="text-xs text-slate-600">${sanitized}</pre></div></div>`;
+    const idx = mermaidBlocks.length;
+    mermaidBlocks.push(sanitizeMermaid(code));
+    return `\n\n@@MERMAID_BLOCK_${idx}@@\n\n`;
   });
 
   const rawHtml = marked.parse(cleaned);
   let safeHtml = DOMPurify.sanitize(rawHtml, {
-    ADD_ATTR: ['target', 'rel', 'class', 'data-mermaid', 'style'],
+    ADD_ATTR: ['target', 'rel', 'class', 'style'],
   });
 
+  // Restore Mermaid placeholder containers with hidden .mermaid-source for renderMermaidDiagrams()
+  safeHtml = safeHtml.replace(/(?:<p>)?@@MERMAID_BLOCK_(\d+)@@(?:<\/p>)?/g, (_, idxStr) => {
+    const src = mermaidBlocks[Number(idxStr)] || '';
+    const esc = escapeHtml(src);
+    return (
+      `<div class="mermaid-placeholder my-3">` +
+        `<pre class="mermaid-source" style="display:none;">${esc}</pre>` +
+        `<div class="mermaid-viewport" style="overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">` +
+          `<pre class="text-xs text-slate-600">${esc}</pre>` +
+        `</div>` +
+      `</div>`
+    );
+  });
+
+  // Convert verified YouTube links into responsive, playable 16:9 embedded video players
   safeHtml = safeHtml.replace(
     /<a[^>]+href="https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^"]*"[^>]*>(.*?)<\/a>/gi,
     '<div class="video-wrapper my-4 rounded-xl overflow-hidden border border-slate-200 bg-slate-900 shadow-xs">' +
@@ -78,13 +115,12 @@ export function renderMermaidDiagrams(container) {
 
     const sourceEl = placeholder.querySelector('.mermaid-source');
     if (!sourceEl) return;
-    let source = sourceEl.textContent;
+    let source = sourceEl.textContent || '';
     if (!source.trim()) return;
 
-    // Sanitize common LLM Mermaid syntax quirks before rendering.
     source = sanitizeMermaid(source);
-
     const id = 'mermaid-' + Math.random().toString(36).slice(2, 9);
+
     mermaid.render(id, source).then(({ svg }) => {
       placeholder.dataset.rendered = 'true';
       placeholder.innerHTML = `
@@ -131,7 +167,6 @@ export function renderMermaidDiagrams(container) {
       placeholder.classList.add('mermaid-rendered');
     }).catch((err) => {
       console.error('[mermaid] render failed:', err);
-      // Remove any orphaned Mermaid error SVG injected into document.body.
       document.querySelectorAll('svg[id^="dmermaid-"]').forEach((el) => el.remove());
       placeholder.innerHTML = `
         <div class="mermaid-error">
