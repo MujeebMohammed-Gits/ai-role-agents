@@ -51,7 +51,6 @@ async def _broadcast(connections: list[WebSocket], message: dict) -> None:
 
 TRACE_EVENT_TYPES = [
     "trace.rag.retrieve",
-    "trace.web.search",
     "trace.agent.thought",
     "trace.guardrail.evaluate",
     "trace.critique.generate",
@@ -160,11 +159,11 @@ async def stream_query(request: QueryRequest) -> StreamingResponse:
                 kind = ev.get("event", "status")
                 data = ev.get("data", {})
                 if kind == "final":
-                    yield f"event: done\ndata: {json.dumps(data, default=str)}\n\n"
+                    yield f"event: done\ndata: {json.dumps(data)}\n\n"
                 elif kind == "token":
-                    yield f"event: token\ndata: {json.dumps(data, default=str)}\n\n"
+                    yield f"event: token\ndata: {json.dumps(data)}\n\n"
                 else:
-                    yield f"event: status\ndata: {json.dumps(data, default=str)}\n\n"
+                    yield f"event: status\ndata: {json.dumps(data)}\n\n"
         except Exception as exc:
             yield f"event: error\ndata: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
 

@@ -12,8 +12,6 @@ WebSocket streaming to the frontend tracking panel.
 
 from __future__ import annotations
 
-import re
-
 import asyncio
 import time
 from dataclasses import dataclass
@@ -27,7 +25,7 @@ from core.hooks import Hooks
 from core.llm_client import LLMClient, build_client
 from core.memory import ConversationMemory
 from core.rag import RAGContext
-from core.web_research import search_web_sources, CURATED_OFFICIAL_VIDEOS
+from core.web_research import search_web_sources
 from core.trace import TraceEmitter
 from core.validation import ValidationState
 
@@ -55,10 +53,10 @@ class AgentResult:
 
 QUALITY_DIRECTIVE = (
     "\n\nRESPONSE QUALITY & GROUNDING STANDARDS:\n"
-    "1. Deliver a well-organized, complete, executive-ready answer that finishes cleanly with a clear Closing Recommendation—never leave sentences or tables unfinished.\n"
-    "2. Ground insights in Retrieved RAG Context, Peer-Reviewed Journals, and Official Organizational Articles [Title](URL) with inline citations.\n"
-    "3. Include ONE compact, clean ```mermaid flowchart TD diagram (max 7 nodes, quoted labels) and ONE concise Markdown summary table (max 5 rows).\n"
-    "4. NEVER output raw bracket markers like [1+L1-L12] or invent URLs."
+    "1. Provide a complete, thorough, well-structured executive answer?never truncate mid-sentence.\n"
+    "2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N].\n"
+    "3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.\n"
+    "4. Where relevant, include curated links to official documentation, benchmark talks, or reference videos from the retrieved web sources (never fabricate URLs)."
 )
 
 
@@ -78,12 +76,7 @@ class BaseAgent:
     ) -> None:
         self.role = role
         self.name = name
-        req_secs = ", ".join(f"## {s}" for s in evaluator.required_sections_for(role))
-        role_contract = (
-            f"\n6. MANDATORY STRUCTURE FOR {name.upper()}: Include clear Markdown headings covering: {req_secs}.\n"
-            "7. Always combine BOTH numbered action steps (1. 2. 3.) AND bulleted insights (- ) in every response, and cite retrieved RAG/Web sources inline."
-        )
-        self.system_prompt = system_prompt + QUALITY_DIRECTIVE + role_contract
+        self.system_prompt = system_prompt + QUALITY_DIRECTIVE
         self.event_bus = event_bus
         self.blackboard = blackboard
         self.memory = memory
@@ -203,15 +196,8 @@ class BaseAgent:
         # Phase 1: RAG Context Fetch.
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
         top_k = max(6, settings.rag_top_k)
-        rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
-        web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        try:
-            rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
-        except Exception:
-            rag_res = rag_task.result() if rag_task.done() and not rag_task.cancelled() and not rag_task.exception() else []
-            web_res = web_task.result() if web_task.done() and not web_task.cancelled() and not web_task.exception() else []
-        context = rag_res if isinstance(rag_res, list) else []
-        web_hits = web_res if isinstance(web_res, list) else []
+        context = await self.rag.retrieve(query, top_k=top_k, emitter=trace)
+        web_hits = await search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace)
         for idx, wh in enumerate(web_hits, start=1):
             context.append({
                 "id": f"web-{idx}",
@@ -403,15 +389,8 @@ class BaseAgent:
         yield {"event": "phase", "data": {"phase": "rag_retrieve", "status": "start"}}
         emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
         top_k = max(6, settings.rag_top_k)
-        rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
-        web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        try:
-            rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
-        except Exception:
-            rag_res = rag_task.result() if rag_task.done() and not rag_task.cancelled() and not rag_task.exception() else []
-            web_res = web_task.result() if web_task.done() and not web_task.cancelled() and not web_task.exception() else []
-        context = rag_res if isinstance(rag_res, list) else []
-        web_hits = web_res if isinstance(web_res, list) else []
+        context = await self.rag.retrieve(query, top_k=top_k, emitter=trace)
+        web_hits = await search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace)
         for idx, wh in enumerate(web_hits, start=1):
             context.append({
                 "id": f"web-{idx}",
@@ -452,9 +431,7 @@ class BaseAgent:
         response_chunks: list[str] = []
         async for chunk in self.llm.stream_complete(self.system_prompt, messages):
             response_chunks.append(chunk)
-            clean_chunk = re.sub(r"\u3010[^\u3011]*\u3011", "", chunk)
-            if clean_chunk:
-                yield {"event": "token", "data": clean_chunk}
+            yield {"event": "token", "data": chunk}
         response = "".join(response_chunks)
         await self.hooks.run("after_llm", self.role, response)
         emit_log("info", "LLM response received", {"chars": len(response)})
@@ -462,17 +439,8 @@ class BaseAgent:
 
         # Phase 4: System Guardrail Evaluation.
         yield {"event": "phase", "data": {"phase": "guardrail", "status": "start"}}
-        try:
-            gr = self.evaluator.apply_guardrails(response)
-            response = gr.sanitized_response
-        except Exception as exc:  # noqa: BLE001 — never let guardrail drop the stream
-            logger.exception("guardrail failed: %s", exc)
-            gr = GuardrailResult(
-                passed=False,
-                violations=[],
-                sanitized_response=response or "",
-            )
-            response = gr.sanitized_response
+        gr = self.evaluator.apply_guardrails(response)
+        response = gr.sanitized_response
         entry = await trace_record("trace.guardrail.evaluate", "guardrail", "evaluate",
                                    score=1.0 if gr.passed else 0.0,
                                    data={"violations": gr.violations,
@@ -487,18 +455,9 @@ class BaseAgent:
 
         # Phase 5/6: Evaluation + Critique/Self-Correction Loop (ensures Eval >= 88 & complete output).
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}
-        try:
-            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
-        except Exception as exc:  # noqa: BLE001 — never let a downstream failure drop the stream
-            logger.exception("evaluation failed: %s", exc)
-            evaluation = EvaluationResult(
-                passed=False,
-                score=0.0,
-                feedback=f"Evaluation unavailable ({exc}).",
-                needs_revision=False,
-            )
+        evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
         loop = 0
-        while self.evaluator.should_revise(evaluation) and loop < self.evaluator.max_loops:
+        while (self.evaluator.should_revise(evaluation) or evaluation.score < 88.0) and loop < max(2, self.evaluator.max_loops):
             loop += 1
             entry = await trace_record("trace.self_correct.loop", "self_correct", f"iterate_{loop}",
                                        score=evaluation.score, data={"suggestions": evaluation.suggestions})
@@ -511,50 +470,22 @@ class BaseAgent:
             yield {"event": "trace", "data": entry}
             revision_messages = messages + [{"role": "user", "content": critique}]
             rev_chunks: list[str] = []
-            fence_close = "\n```\n" if "".join(response_chunks).count("```") % 2 == 1 else ""
-            yield {"event": "token", "data": f"{fence_close}\n\n---\n### Refined & Verified Response\n\n"}
+            yield {"event": "token", "data": "\n\n---\n### Refined & Verified Response\n\n"}
             async for chunk in self.llm.stream_complete(self.system_prompt, revision_messages):
                 rev_chunks.append(chunk)
-                clean_chunk = re.sub(r"\u3010[^\u3011]*\u3011", "", chunk)
-                if clean_chunk:
-                    yield {"event": "token", "data": clean_chunk}
-            response = re.sub(r"\u3010[^\u3011]*\u3011", "", "".join(rev_chunks))
+                yield {"event": "token", "data": chunk}
+            response = "".join(rev_chunks)
             gr = self.evaluator.apply_guardrails(response)
             response = gr.sanitized_response
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
 
-        # Deterministically append verified official video embeds if not already present in response
-        official_vids = [c.get("metadata", {}) for c in context if c.get("metadata", {}).get("kind") == "video"]
-        if not official_vids:
-            q_low = query.lower()
-            scored_curated = sorted(
-                CURATED_OFFICIAL_VIDEOS,
-                key=lambda item: sum(1 for t in item if t in q_low),
-                reverse=True,
-            )
-            official_vids = [
-                {"title": f"{org} — {ttl}", "url": f"https://www.youtube.com/watch?v={vid}", "kind": "video"}
-                for org, vid, ttl, _url, _tags in scored_curated[:2]
-            ]
-        missing_vids = [v for v in official_vids if v.get("url") and v["url"] not in response]
-        if missing_vids:
-            fence_close = "\n```\n" if response.count("```") % 2 == 1 else ""
-            vid_md = f"{fence_close}\n\n### Official Organizational Video Briefings\n\n" + "\n\n".join(
-                f"[{v['title']}]({v['url']})" for v in missing_vids[:2]
-            )
-            response = response + vid_md
-            yield {"event": "token", "data": vid_md}
-
-        try:
-            entry = await trace_record("trace.validation.final", "validation", "validate",
-                                       score=evaluation.score, passed=evaluation.passed,
-                                       data={"stage_scores": evaluation.stage_scores,
-                                             "loop_count": loop})
-            yield {"event": "trace", "data": entry}
-            yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
-                                              "score": evaluation.score, "passed": evaluation.passed}}
-        except Exception as exc:  # noqa: BLE001 — never let validation.final drop the stream
-            logger.exception("validation.final failed: %s", exc)
+        entry = await trace_record("trace.validation.final", "validation", "validate",
+                                   score=evaluation.score, passed=evaluation.passed,
+                                   data={"stage_scores": evaluation.stage_scores,
+                                         "loop_count": loop})
+        yield {"event": "trace", "data": entry}
+        yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
+                                          "score": evaluation.score, "passed": evaluation.passed}}
 
         # Phase 7: Final JSON Validation.
         if evaluation.passed:
@@ -603,22 +534,16 @@ class BaseAgent:
             "duration_ms": round(duration_ms, 2),
         }
 
-        try:
-            await self._emit("agent.complete", {
-                "role": self.role,
-                "session_id": session_id,
-                "score": evaluation.score,
-                "validation_state": validation_state.value,
-                "loop_count": loop,
-                "duration_ms": round(duration_ms, 2),
-            })
-        except Exception as exc:  # noqa: BLE001 — never let agent.complete emit drop the stream
-            logger.exception("agent.complete emit failed: %s", exc)
+        await self._emit("agent.complete", {
+            "role": self.role,
+            "session_id": session_id,
+            "score": evaluation.score,
+            "validation_state": validation_state.value,
+            "loop_count": loop,
+            "duration_ms": round(duration_ms, 2),
+        })
 
-        try:
-            yield {"event": "final", "data": result}
-        except Exception as exc:  # noqa: BLE001 — never let final event drop the stream
-            logger.exception("final yield failed: %s", exc)
+        yield {"event": "final", "data": result}
 
     # ------------------------------------------------------------------ internals
 

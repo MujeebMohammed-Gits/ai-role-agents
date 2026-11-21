@@ -2,7 +2,6 @@ import { API_BASE } from './services/api';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LayoutDashboard, Bot, MessageCircle, Activity, Play, Terminal,
-  Download,
   ChevronRight, X, Maximize, Minimize, Plus, Search, Sparkles,
   Globe, Layers, Shield, Users, Briefcase, Target, Brain, Wand2,
   BarChart3, Clock, RefreshCw, Link, ExternalLink,
@@ -10,7 +9,6 @@ import {
 import { listAgents, getMemory, clearMemory } from './services/api.js';
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { renderMarkdown, renderMermaidDiagrams } from './utils/markdownRenderer.js';
-import { downloadConversationPdf } from './utils/exportChatPdf.js';
 import { formatLog, LEVEL_COLORS } from './utils/formatLog.js';
 
 const AGENT_META = {
@@ -97,7 +95,7 @@ function MessageBubble({ message, isAgent }) {
   // streaming, the "Rendering workflow diagram..." placeholder stays visible.
   useEffect(() => {
     if (message.streaming || !bubbleRef.current) return;
-    requestAnimationFrame(() => { if (bubbleRef.current) renderMermaidDiagrams(bubbleRef.current); });
+    renderMermaidDiagrams(bubbleRef.current);
   }, [message.streaming, message.rendered, message.content]);
   const meta = isAgent ? AGENT_META[message.agentRole || 'delivery_management'] : null;
   const base = isUser
@@ -168,7 +166,7 @@ function MessageBubble({ message, isAgent }) {
 
 function ConversationThread({ messages }) {
   return (
-    <div data-chat-thread="true" className="h-full overflow-y-auto px-6 py-6 space-y-4">
+    <div className="h-full overflow-y-auto px-6 py-6 space-y-4">
       {messages.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full text-muted">
           <MessageCircle size={48} className="mb-3 opacity-50" />
@@ -346,52 +344,6 @@ export default function App() {
   const [logCollapsed, setLogCollapsed] = useState(true);
   const [traceCollapsed, setTraceCollapsed] = useState(true);
   const [traceEvents, setTraceEvents] = useState([]);
-  const [pendingAction, setPendingAction] = useState(null);
-
-  const performAgentSwitch = useCallback((agent) => {
-    setSelectedAgent(agent);
-    setShowGallery(false);
-    const id = 'sess_' + agent.role + '_' + Math.random().toString(36).slice(2, 9);
-    setSessionId(id);
-    setConversation([]);
-    setLogs([]);
-    setTraceEvents([]);
-  }, []);
-
-  const executePendingAction = useCallback((action) => {
-    if (!action) return;
-    if (action.type === 'switch_agent' && action.agent) {
-      performAgentSwitch(action.agent);
-    } else if (action.type === 'gallery') {
-      setSelectedAgent(null);
-      setShowGallery(true);
-    } else if (action.type === 'refresh') {
-      window.location.reload();
-    }
-  }, [performAgentSwitch]);
-
-  useEffect(() => {
-    const hasActiveChat = Boolean(selectedAgent && conversation.length > 0);
-    const handleBeforeUnload = (e) => {
-      if (!hasActiveChat) return;
-      e.preventDefault();
-      e.returnValue = 'Your active chat conversation will be lost if you leave or refresh.';
-      return e.returnValue;
-    };
-    const handleKeyDown = (e) => {
-      if (!hasActiveChat) return;
-      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
-        e.preventDefault();
-        setPendingAction({ type: 'refresh' });
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [selectedAgent, conversation.length]);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -428,12 +380,14 @@ export default function App() {
   }, [conversation]);
 
   const selectAgent = useCallback((agent) => {
-    if (selectedAgent && selectedAgent.role !== agent.role && conversation.length > 0) {
-      setPendingAction({ type: 'switch_agent', agent });
-      return;
-    }
-    performAgentSwitch(agent);
-  }, [selectedAgent, conversation.length, performAgentSwitch]);
+    setSelectedAgent(agent);
+    setShowGallery(false);
+    const id = 'sess_' + agent.role + '_' + Math.random().toString(36).slice(2, 9);
+    setSessionId(id);
+    setConversation([]);
+    setLogs([]);
+    setTraceEvents([]);
+  }, []);
 
   const handleSubmit = useCallback(
     async (e) => {
@@ -670,19 +624,6 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => downloadConversationPdf(selectedAgent, conversation)}
-              disabled={!selectedAgent || conversation.length === 0}
-              className="btn-ghost text-[11px] px-3 py-2 inline-flex items-center disabled:opacity-40 disabled:cursor-not-allowed"
-              title={
-                !selectedAgent || conversation.length === 0
-                  ? 'Select an agent and start a chat to download PDF'
-                  : 'Download active chat conversation as PDF'
-              }
-            >
-              <Download size={14} strokeWidth={1.5} className="mr-1" />
-              Download PDF
-            </button>
-            <button
               onClick={() => setLogCollapsed((c) => !c)}
               className="btn-ghost text-[11px] px-3 py-2"
               title="Toggle live log"
@@ -758,35 +699,6 @@ export default function App() {
           </div>
         </div>
       </main>
-      {pendingAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs px-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Save your conversation before leaving?</h3>
-            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-              Your active conversation with <span className="font-medium text-slate-900">{selectedAgent?.title}</span> will be lost if you{' '}
-              {pendingAction.type === 'refresh'
-                ? 'refresh the webpage'
-                : pendingAction.type === 'switch_agent'
-                ? `switch to ${pendingAction.agent?.title}`
-                : 'return to the agent gallery'}
-              . Would you like to download the entire chat conversation as a PDF first?
-            </p>
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => { const act = pendingAction; setPendingAction(null); executePendingAction(act); }}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
-              >No</button>
-              <button
-                type="button"
-                onClick={() => { const act = pendingAction; downloadConversationPdf(selectedAgent, conversation); setPendingAction(null); setTimeout(() => executePendingAction(act), 250); }}
-                className="px-4 py-2 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 shadow-xs transition inline-flex items-center gap-1.5"
-              ><Download size={15} /> Yes, Download PDF</button>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

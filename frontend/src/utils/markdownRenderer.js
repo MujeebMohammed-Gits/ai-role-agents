@@ -5,49 +5,27 @@ import mermaid from 'mermaid';
 mermaid.initialize({
   startOnLoad: false,
   theme: 'default',
-  securityLevel: 'loose',
-  fontFamily: 'Inter, system-ui, sans-serif',
   suppressErrorRendering: true,
+  securityLevel: 'loose',
+  themeVariables: { fontSize: '13px' },
+  flowchart: { nodeSpacing: 32, rankSpacing: 36, padding: 12, useMaxWidth: false },
 });
 
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
-
-function escapeHtml(str) {
-  return String(str || '')
+function escapeHtml(unsafe) {
+  return String(unsafe)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
+// Sanitize common LLM Mermaid syntax quirks before rendering. LLM-generated
+// diagrams often emit unquoted node labels with parentheses or special
+// characters (e.g. `A[Text (Note)]`), which Mermaid rejects. Wrap those
+// labels in quotes so they parse cleanly: `A["Text (Note)"]`.
 function sanitizeMermaid(source) {
-  let text = String(source || '').replace(/\r\n/g, '\n').trim();
-  // Truncate if an unclosed fence swallowed subsequent Markdown headings or horizontal rules
-  text = text.split(/\n(?:---|###\s)/)[0].trim();
-  text = text.replace(
-    /^(stateDiagram-v2|stateDiagram|flowchart\s+[A-Z]{2}|graph\s+[A-Z]{2}|sequenceDiagram|gantt|classDiagram|erDiagram)\s+(?!\n)/i,
-    '$1\n'
-  );
-  const isStateDiagram = /^stateDiagram/i.test(text);
-
-  return text.split('\n').map((rawLine) => {
-    let line = rawLine.trim();
-    if (!line) return '';
-    if (isStateDiagram) {
-      line = line.replace(/^state\s+"([^"]+)"\s*(-->|->)/, (_, sName, arrow) => {
-        const cleanId = sName.replace(/[^A-Za-z0-9_]/g, '_');
-        return `${cleanId} ${arrow}`;
-      });
-      line = line.replace(/\u2265/g, '>=').replace(/\u2264/g, '<=').replace(/\u2260/g, '!=').replace(/\u2192/g, 'to');
-      line = line.replace(/^([^:\n]+:\s*)(.+)$/, (m, prefix, lbl) => {
-        const cleanLbl = lbl.replace(/"/g, "'").trim();
-        return `${prefix}${cleanLbl}`;
-      });
-      return line;
-    }
+  return source.split('\n').map((line) => {
     return line.replace(
       /([A-Za-z_][\w\-]*)\[(".*?"|'.*?'|[^\]]*)\]/g,
       (match, id, label) => {
@@ -56,9 +34,12 @@ function sanitizeMermaid(source) {
           const inner = label.slice(1, -1).replace(/\\?"/g, "'");
           return `${id}["${inner}"]`;
         }
-        const cleaned = label.replace(/\\?"/g, "'").replace(/\u2265/g, '>=').replace(/\u2264/g, '<=');
-        const needsQuote = /[()\[\]{}|&;<>':\/]/.test(cleaned);
-        return needsQuote ? `${id}["${cleaned}"]` : `${id}[${cleaned}]`;
+        const cleaned = label.replace(/\\?"/g, "'");
+        const needsQuote = /[()\[\]{}|&;<>']/.test(cleaned);
+        if (needsQuote) {
+          return `${id}["${cleaned}"]`;
+        }
+        return `${id}[${cleaned}]`;
       }
     );
   }).join('\n');
@@ -67,48 +48,71 @@ function sanitizeMermaid(source) {
 export function renderMarkdown(text) {
   if (!text) return '';
 
-  // Strip raw OpenAI/NIM vector file-search artifacts
-  let cleaned = String(text).replace(/\u3010[^\u3011]*\u3011/g, '');
+  const renderer = new marked.Renderer();
 
-  // Extract mermaid blocks into placeholder containers before Marked parses Markdown
-  const mermaidBlocks = [];
-  cleaned = cleaned.replace(/```mermaid\s*([\s\(\S\)]*?)```/gi, (_, code) => {
-    const idx = mermaidBlocks.length;
-    mermaidBlocks.push(sanitizeMermaid(code));
-    return `\n\n@@MERMAID_BLOCK_${idx}@@\n\n`;
+  // External links open in a new tab. [video](url) becomes an embedded player.
+  const originalLink = renderer.link;
+  renderer.link = function (href, title, text) {
+    if (text && String(text).trim().toLowerCase() === 'video') {
+      return `<div class="video-wrapper my-3"><iframe class="w-full h-64" src="${escapeHtml(href)}" frameborder="0" allowfullscreen loading="lazy" sandbox="allow-same-origin allow-scripts"></iframe></div>`;
+    }
+    const html = originalLink.call(this, href, title, text);
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
+    }
+    return html;
+  };
+
+  // Responsive images with rounded styling.
+  const originalImage = renderer.image;
+  renderer.image = function (href, title, text) {
+    const html = originalImage.call(this, href, title, text);
+    return html.replace('<img ', '<img class="rounded-lg max-w-full my-3" ');
+  };
+
+  // Mermaid code blocks become placeholders that are rendered as SVG once the
+  // stream closes (see renderMermaidDiagrams / MessageBubble).
+  const originalCode = renderer.code;
+  renderer.code = function (codeOrToken, language) {
+    const rawCode = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.text : codeOrToken;
+    const rawLang = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.lang : language;
+    if (rawLang != null && String(rawLang).trim().toLowerCase() === 'mermaid') {
+      return `<div class="mermaid-placeholder"><div class="mermaid-loading">Rendering workflow diagram...</div><div class="mermaid-source">${escapeHtml(rawCode)}</div></div>`;
+    }
+    return originalCode.apply(this, arguments);
+  };
+
+  let html = marked.parse(text, {
+    mangle: false,
+    headerIds: false,
+    breaks: true,
+    renderer,
   });
 
-  const rawHtml = marked.parse(cleaned);
-  let safeHtml = DOMPurify.sanitize(rawHtml, {
-    ADD_ATTR: ['target', 'rel', 'class', 'style'],
-  });
-
-  // Restore Mermaid placeholder containers with hidden .mermaid-source for renderMermaidDiagrams()
-  safeHtml = safeHtml.replace(/(?:<p>)?@@MERMAID_BLOCK_(\d+)@@(?:<\/p>)?/g, (_, idxStr) => {
-    const src = mermaidBlocks[Number(idxStr)] || '';
-    const esc = escapeHtml(src);
-    return (
-      `<div class="mermaid-placeholder my-3">` +
-        `<pre class="mermaid-source" style="display:none;">${esc}</pre>` +
-        `<div class="mermaid-viewport" style="border:1px solid #e2e8f0;border-radius:0.75rem;overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">` +
-          `<pre class="text-xs text-slate-600">${esc}</pre>` +
-        `</div>` +
-      `</div>`
-    );
-  });
-
-  // Convert verified YouTube links into responsive, playable 16:9 embedded video players
-  safeHtml = safeHtml.replace(
-    /<a[^>]+href="https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^"]*"[^>]*>(.*?)<\/a>/gi,
-    '<div class="video-wrapper my-4 rounded-xl overflow-hidden border border-slate-200 bg-slate-900 shadow-xs">' +
-      `<iframe class="w-full aspect-video" style="height:315px;width:100%;" src="https://www.youtube.com/embed/$1" title="$2" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>` +
-      '<div class="px-3.5 py-2 text-xs font-medium text-slate-100 bg-slate-800 flex items-center justify-between"><span>Play: $2</span><span class="text-indigo-300">Official Reference</span></div>' +
-    '</div>'
+  // Convert YouTube / Vimeo URLs to responsive embedded iframes.
+  html = html.replace(
+    /(https?:\/\/www\.youtube(?:-nocookie)?\.com\/watch\?v=([a-zA-Z0-9_-]{11})|https?:\/\/youtu\.be\/([a-zA-Z0-9_-]{11}))/g,
+    '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://www.youtube.com/embed/$2$3" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
+  );
+  html = html.replace(
+    /(https?:\/\/player\.vimeo\.com\/video\/([0-9]+)|https?:\/\/vimeo\.com\/([0-9]+))/g,
+    '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://player.vimeo.com/video/$2$3" frameborder="0" allowfullscreen loading="lazy"></iframe></div>'
   );
 
-  return safeHtml;
+  return DOMPurify.sanitize(html, {
+    ADD_ATTR: ['target', 'rel', 'class', 'allowfullscreen', 'loading', 'frameborder', 'src', 'sandbox'],
+    ADD_TAGS: ['iframe'],
+    ADD_URI_ATTR: [],
+  });
 }
 
+/**
+ * Render any `.mermaid-placeholder` nodes inside `container` as inline SVG
+ * diagrams using mermaid.render. Safe to call repeatedly; already-rendered
+ * placeholders are skipped via a data attribute. Intended to run after a
+ * streaming message has finished so the placeholder stays visible during the
+ * stream.
+ */
 export function renderMermaidDiagrams(container) {
   if (!container) return;
 
@@ -118,12 +122,13 @@ export function renderMermaidDiagrams(container) {
 
     const sourceEl = placeholder.querySelector('.mermaid-source');
     if (!sourceEl) return;
-    let source = sourceEl.textContent || '';
+    let source = sourceEl.textContent;
     if (!source.trim()) return;
 
+    // Sanitize common LLM Mermaid syntax quirks before rendering.
     source = sanitizeMermaid(source);
-    const id = 'mermaid-' + Math.random().toString(36).slice(2, 9);
 
+    const id = 'mermaid-' + Math.random().toString(36).slice(2, 9);
     mermaid.render(id, source).then(({ svg }) => {
       placeholder.dataset.rendered = 'true';
       placeholder.innerHTML = `
@@ -136,7 +141,7 @@ export function renderMermaidDiagrams(container) {
             <button type="button" class="mermaid-zoom-btn" data-action="reset" title="Reset zoom">Reset</button>
           </div>
         </div>
-        <div class="mermaid-viewport" style="border:1px solid #e2e8f0;border-radius:0.75rem;overflow-x:auto;overflow-y:auto;max-height:540px;width:100%;padding:12px;">
+        <div class="mermaid-viewport">
           <div class="mermaid-canvas">${svg}</div>
         </div>
       `;
@@ -145,9 +150,7 @@ export function renderMermaidDiagrams(container) {
       const label = placeholder.querySelector('.mermaid-zoom-level');
       if (svgEl) {
         svgEl.removeAttribute('style');
-        svgEl.style.maxWidth = '100%';
-        svgEl.style.maxHeight = '360px';
-        svgEl.style.width = 'auto';
+        svgEl.style.maxWidth = 'none';
         svgEl.style.height = 'auto';
         svgEl.style.display = 'block';
         svgEl.style.margin = '0 auto';
@@ -172,7 +175,8 @@ export function renderMermaidDiagrams(container) {
       placeholder.classList.add('mermaid-rendered');
     }).catch((err) => {
       console.error('[mermaid] render failed:', err);
-      document.querySelectorAll('[id^="dmermaid-"], svg[id^="dmermaid-"]').forEach((el) => el.remove());
+      // Remove any orphaned Mermaid error SVG injected into document.body.
+      document.querySelectorAll('svg[id^="dmermaid-"]').forEach((el) => el.remove());
       placeholder.innerHTML = `
         <div class="mermaid-error">
           <div class="mermaid-error-title">Unable to render workflow diagram</div>

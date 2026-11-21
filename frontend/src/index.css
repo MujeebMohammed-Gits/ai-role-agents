@@ -401,35 +401,9 @@
   max-height: 440px !important;
   overflow: auto !important;
   padding: 16px !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 0.75rem !important;
 }
 .mermaid-canvas {
   display: inline-block !important;
   min-width: 100% !important;
   transition: transform 0.15s ease !important;
-}
-
-/* Prevent layout jump when Mermaid diagrams and Eval badges mount */
-.chat-scroll, [class*='overflow-y-auto'] { overflow-anchor: none; scroll-behavior: smooth; }
-
-/* Clear horizontal and vertical scrollbars for Mermaid diagrams */
-.mermaid-viewport {
-  overflow-x: auto !important;
-  overflow-y: auto !important;
-  max-height: 540px;
-  scrollbar-width: thin;
-  scrollbar-color: #94a3b8 #f1f5f9;
-}
-.mermaid-viewport::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.mermaid-viewport::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 4px;
-}
-.mermaid-viewport::-webkit-scrollbar-thumb {
-  background: #94a3b8;
-  border-radius: 4px;
 }
