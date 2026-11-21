@@ -207,7 +207,11 @@ class BaseAgent:
         top_k = max(6, settings.rag_top_k)
         rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
         web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
+        try:
+            rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
+        except Exception:
+            rag_res = rag_task.result() if rag_task.done() and not rag_task.cancelled() and not rag_task.exception() else []
+            web_res = web_task.result() if web_task.done() and not web_task.cancelled() and not web_task.exception() else []
         context = rag_res if isinstance(rag_res, list) else []
         web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
@@ -403,7 +407,11 @@ class BaseAgent:
         top_k = max(6, settings.rag_top_k)
         rag_task = asyncio.create_task(self.rag.retrieve(query, top_k=top_k, emitter=trace))
         web_task = asyncio.create_task(search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace))
-        rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
+        try:
+            rag_res, web_res = await asyncio.wait_for(asyncio.gather(rag_task, web_task, return_exceptions=True), timeout=3.5)
+        except Exception:
+            rag_res = rag_task.result() if rag_task.done() and not rag_task.cancelled() and not rag_task.exception() else []
+            web_res = web_task.result() if web_task.done() and not web_task.cancelled() and not web_task.exception() else []
         context = rag_res if isinstance(rag_res, list) else []
         web_hits = web_res if isinstance(web_res, list) else []
         for idx, wh in enumerate(web_hits, start=1):
