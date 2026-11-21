@@ -462,8 +462,17 @@ class BaseAgent:
 
         # Phase 4: System Guardrail Evaluation.
         yield {"event": "phase", "data": {"phase": "guardrail", "status": "start"}}
-        gr = self.evaluator.apply_guardrails(response)
-        response = gr.sanitized_response
+        try:
+            gr = self.evaluator.apply_guardrails(response)
+            response = gr.sanitized_response
+        except Exception as exc:  # noqa: BLE001 — never let guardrail drop the stream
+            logger.exception("guardrail failed: %s", exc)
+            gr = GuardrailResult(
+                passed=False,
+                violations=[],
+                sanitized_response=response or "",
+            )
+            response = gr.sanitized_response
         entry = await trace_record("trace.guardrail.evaluate", "guardrail", "evaluate",
                                    score=1.0 if gr.passed else 0.0,
                                    data={"violations": gr.violations,
@@ -594,16 +603,22 @@ class BaseAgent:
             "duration_ms": round(duration_ms, 2),
         }
 
-        await self._emit("agent.complete", {
-            "role": self.role,
-            "session_id": session_id,
-            "score": evaluation.score,
-            "validation_state": validation_state.value,
-            "loop_count": loop,
-            "duration_ms": round(duration_ms, 2),
-        })
+        try:
+            await self._emit("agent.complete", {
+                "role": self.role,
+                "session_id": session_id,
+                "score": evaluation.score,
+                "validation_state": validation_state.value,
+                "loop_count": loop,
+                "duration_ms": round(duration_ms, 2),
+            })
+        except Exception as exc:  # noqa: BLE001 — never let agent.complete emit drop the stream
+            logger.exception("agent.complete emit failed: %s", exc)
 
-        yield {"event": "final", "data": result}
+        try:
+            yield {"event": "final", "data": result}
+        except Exception as exc:  # noqa: BLE001 — never let final event drop the stream
+            logger.exception("final yield failed: %s", exc)
 
     # ------------------------------------------------------------------ internals
 

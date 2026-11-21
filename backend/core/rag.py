@@ -132,7 +132,7 @@ def build_embedding_provider() -> EmbeddingProvider:
 
 
 class RAGContext:
-    def __init__(self, enabled: bool = True, top_k: int = 5,
+    def __init__(self, enabled: bool = True, top_k: int = 6,
                  collection: Optional[str] = None) -> None:
         self.enabled = enabled
         self.top_k = top_k

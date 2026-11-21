@@ -20,7 +20,7 @@ async def search_academic_journals(query: str, max_papers: int = 3) -> list[dict
         q_enc = urllib.parse.quote_plus(f"{query} official conference OR talk")
         api_url = f"https://openalex.org{q_enc}&per-page={max_papers}&sort=relevance_score:desc"
         async with httpx.AsyncClient(
-            timeout=2.5,
+            timeout=3.0,
             headers={"User-Agent": "AI-Role-Agents-Research/1.0 (mailto:research@ai-role-agents.app)"},
         ) as client:
             resp = await client.get(api_url)
@@ -58,7 +58,7 @@ async def search_org_articles(query: str, max_results: int = 3) -> list[dict]:
     try:
         ddg_url = "https://" + "html.duckduckgo." + "com/html/"
         async with httpx.AsyncClient(
-            timeout=2.5,
+            timeout=3.0,
             follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
         ) as client:
@@ -116,7 +116,7 @@ async def search_youtube_videos(query: str, max_videos: int = 2) -> list[dict]:
     ranked_feeds.sort(key=lambda x: x, reverse=True)
 
     candidates: list[tuple[int, dict]] = []
-    async with httpx.AsyncClient(timeout=2.5, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=3.0, follow_redirects=True) as client:
         for _, org_name, ch_id in ranked_feeds[:3]:
             try:
                 resp = await client.get(f"https://www.youtube.com/feeds/videos.xml?channel_id={ch_id}")
