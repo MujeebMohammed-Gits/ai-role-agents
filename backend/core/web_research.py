@@ -41,6 +41,12 @@ VERIFIED_OFFICIAL_CHANNELS: dict[str, str] = {
     "HashiCorp": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
 }
 
+OFFICIAL_YOUTUBE_AUTHORS: set[str] = {
+    "Atlassian", "Google Cloud Tech", "CNCF", "NVIDIA",
+    "GOTO Conferences", "Microsoft Developer", "Scrum.org",
+    "InfoQ", "Thoughtworks", "HashiCorp",
+}
+
 # Curated verified conference / organizational video fallback. Used when a
 # channel XML feed times out or returns no entries. Every entry points to an
 # official organizational channel — never random individuals or bootcamps.
@@ -439,3 +445,90 @@ async def fetch_verified_videos(
 
     # No topic-relevant official organizational video found — return empty.
     return []
+
+
+async def _verify_youtube_embeddable(
+    client: httpx.AsyncClient, video_id: str
+) -> dict[str, str] | None:
+    """Verify a YouTube video is publicly embeddable via the official oEmbed API.
+
+    Returns a dict with verified title/author_name/video_id/url when the video
+    returns HTTP 200 and its author is an official organizational channel.
+    Returns None otherwise (video unavailable, private, or non-embeddable).
+    """
+    oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+    try:
+        resp = await client.get(oembed_url, timeout=3.0)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        author_name = data.get("author_name", "")
+        if author_name not in OFFICIAL_YOUTUBE_AUTHORS:
+            return None
+        return {
+            "title": data.get("title", ""),
+            "author_name": author_name,
+            "video_id": video_id,
+            "url": f"https://www.youtube.com/watch?v={video_id}",
+        }
+    except Exception:  # noqa: BLE001 — oEmbed is best-effort
+        return None
+
+
+async def search_youtube_videos(
+    query: str = "", max_videos: int = 2
+) -> list[dict[str, str]]:
+    """Fetch official organizational YouTube videos verified via oEmbed.
+
+    Candidate videos are pulled from official YouTube XML Atom feeds and each
+    candidate is checked concurrently via oEmbed. Only videos that return HTTP
+    200 and belong to an official organizational channel are returned, using
+    the verified title and author_name from oEmbed. Returns [] if zero videos
+    pass oEmbed for the query.
+    """
+    keywords = _query_keywords(query)
+    timeout = httpx.Timeout(3.0, connect=3.0, read=3.0)
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        },
+    ) as client:
+        # Fetch candidate videos from all channel feeds concurrently.
+        channel_tasks = [
+            asyncio.create_task(_fetch_youtube_channel(name, cid, client))
+            for name, cid in VERIFIED_OFFICIAL_CHANNELS.items()
+        ]
+        gathered = await asyncio.gather(*channel_tasks, return_exceptions=True)
+
+        candidate_videos: list[dict[str, str]] = []
+        for item in gathered:
+            if isinstance(item, list):
+                candidate_videos.extend(item)
+
+        # Run oEmbed verification concurrently on every candidate video.
+        verify_tasks = [
+            asyncio.create_task(_verify_youtube_embeddable(client, v["video_id"]))
+            for v in candidate_videos
+            if v.get("video_id")
+        ]
+        verify_results = await asyncio.gather(*verify_tasks, return_exceptions=True)
+
+        verified: list[dict[str, str]] = []
+        for result in verify_results:
+            if isinstance(result, dict):
+                verified.append(result)
+
+        if keywords:
+            scored = [
+                v for v in verified
+                if _video_relevance_score(v, keywords) >= 2
+            ]
+            if scored:
+                return scored[:max_videos]
+        else:
+            return verified[:max_videos]
+
+        return []

@@ -26,7 +26,7 @@ from core.hooks import Hooks
 from core.llm_client import LLMClient, build_client
 from core.memory import ConversationMemory
 from core.rag import RAGContext
-from core.web_research import fetch_verified_videos, search_web_sources
+from core.web_research import search_youtube_videos, search_web_sources
 from core.trace import TraceEmitter
 from core.validation import ValidationState
 
@@ -554,7 +554,7 @@ class BaseAgent:
         response = re.sub("「[^」]*」", "", response)
         if "### Official Organizational Video Briefings" not in response:
             try:
-                missing_vids = await fetch_verified_videos(query=query, emitter=trace)
+                missing_vids = await search_youtube_videos(query=query, max_videos=2)
                 if missing_vids:
                     video_lines = "\n".join(
                         f"- [{v['title']}]({v['url']})" for v in missing_vids[:2]
