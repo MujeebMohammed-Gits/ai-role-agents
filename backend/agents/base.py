@@ -173,6 +173,13 @@ class BaseAgent:
             return True
         return stripped[-1] not in ".!?)]`"
 
+
+def _ensure_heading_blank_line(response: str) -> str:
+    """Ensure every Markdown heading (## / ###) is preceded by a blank line
+    so renderers never show raw ``## `` hashes as plain text."""
+    return re.sub(r"\n+(?=#{2,}\s)", "\n\n", response)
+
+
 # ------------------------------------------------------------------ processing
 
     async def _process(self, item: dict) -> None:
@@ -268,7 +275,13 @@ class BaseAgent:
             cont_chunks: list[str] = []
             async for chunk in self.llm.stream_complete(
                 self.system_prompt,
-                messages + [{"role": "user", "content": "Continue seamlessly from the exact point where your previous output stopped to finish the remaining table rows and closing section."}],
+                messages + [
+                    {"role": "assistant", "content": response},
+                    {
+                        "role": "user",
+                        "content": "Continue ONLY from the exact word where your previous message stopped. Do NOT repeat any earlier headings or sections.",
+                    },
+                ],
             ):
                 cont_chunks.append(chunk)
             response = response + "".join(cont_chunks)
@@ -299,10 +312,18 @@ class BaseAgent:
                      {"iteration": loop, "score": evaluation.score})
             critique = self.evaluator.generate_critique(
                 self.role, query, context_text, response, evaluation)
+            critique += (
+                "\nOutput ONLY the missing or improved sections — do NOT repeat "
+                "any headings or content already present in the response above."
+            )
             await trace_record("trace.critique.generate", "critique", "generate",
                                data={"critique": critique, "iteration": loop})
-            revision_messages = messages + [{"role": "user", "content": critique}]
-            response = await self.llm.complete(self.system_prompt, revision_messages)
+            revision_messages = messages + [
+                {"role": "assistant", "content": response},
+                {"role": "user", "content": critique},
+            ]
+            revision = await self.llm.complete(self.system_prompt, revision_messages)
+            response = response + "\n\n" + revision
             gr = self.evaluator.apply_guardrails(response)
             response = gr.sanitized_response
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
@@ -313,6 +334,7 @@ class BaseAgent:
         if response.count("```") % 2 != 0:
             response += "\n```"
         response = re.sub("「[^」]*」", "", response)
+        response = _ensure_heading_blank_line(response)
 
         # Phase 7: Final JSON Validation.
         await trace_record("trace.validation.final", "validation", "validate",
@@ -508,7 +530,13 @@ class BaseAgent:
             cont_chunks: list[str] = []
             async for chunk in self.llm.stream_complete(
                 self.system_prompt,
-                messages + [{"role": "user", "content": "Continue seamlessly from the exact point where your previous output stopped to finish the remaining table rows and closing section."}],
+                messages + [
+                    {"role": "assistant", "content": response},
+                    {
+                        "role": "user",
+                        "content": "Continue ONLY from the exact word where your previous message stopped. Do NOT repeat any earlier headings or sections.",
+                    },
+                ],
             ):
                 cont_chunks.append(chunk)
                 yield {"event": "token", "data": chunk}
@@ -545,17 +573,29 @@ class BaseAgent:
             yield {"event": "trace", "data": entry}
             yield {"event": "status", "data": {"message": f"Refining response quality (pass {loop})..."}}
             critique = self.evaluator.generate_critique(self.role, query, context_text, response, evaluation)
-            critique += "\nEnsure the response is 100% complete (never cut off), includes clear citations with URLs, structured tables, and achieves an evaluation score above 90."
+            critique += (
+                "\nEnsure the response is 100% complete (never cut off), includes clear citations "
+                "with URLs, structured tables, and achieves an evaluation score above 90. "
+                "Output ONLY the missing or improved sections — do NOT repeat any headings or "
+                "content already present in the response above."
+            )
             entry = await trace_record("trace.critique.generate", "critique", "generate",
                                        data={"critique": critique, "iteration": loop})
             yield {"event": "trace", "data": entry}
-            revision_messages = messages + [{"role": "user", "content": critique}]
+            revision_messages = messages + [
+                {"role": "assistant", "content": response},
+                {"role": "user", "content": critique},
+            ]
             rev_chunks: list[str] = []
             yield {"event": "token", "data": "\n\n---\n### Refined & Verified Response\n\n"}
             async for chunk in self.llm.stream_complete(self.system_prompt, revision_messages):
                 rev_chunks.append(chunk)
                 yield {"event": "token", "data": chunk}
-            response = "".join(rev_chunks)
+            response = (
+                response
+                + "\n\n---\n### Refined & Verified Response\n\n"
+                + "".join(rev_chunks)
+            )
             gr = self.evaluator.apply_guardrails(response)
             response = gr.sanitized_response
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
@@ -564,6 +604,7 @@ class BaseAgent:
         if response.count("```") % 2 != 0:
             response += "\n```"
         response = re.sub("「[^」]*」", "", response)
+        response = _ensure_heading_blank_line(response)
         if "### Official Organizational Video Briefings" not in response:
             try:
                 missing_vids = await search_youtube_videos(query=query, max_videos=2)

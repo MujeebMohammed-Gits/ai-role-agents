@@ -25,8 +25,9 @@ function escapeHtml(unsafe) {
 // characters (e.g. `A[Text (Note)]`), which Mermaid rejects. Wrap those
 // labels in quotes so they parse cleanly: `A["Text (Note)"]`.
 function sanitizeMermaid(source) {
+  const isStateDiagram = /^\s*stateDiagram(-v2)?\b/m.test(source);
   return source.split('\n').map((line) => {
-    return line.replace(
+    let out = line.replace(
       /([A-Za-z_][\w\-]*)\[(".*?"|'.*?'|[^\]]*)\]/g,
       (match, id, label) => {
         const isQuoted = /^["'].*['"]$/.test(label);
@@ -42,11 +43,43 @@ function sanitizeMermaid(source) {
         return `${id}[${cleaned}]`;
       }
     );
+
+    if (isStateDiagram) {
+      // Never mangle state transitions; normalize Unicode operators to ASCII.
+      out = out.replace(/≥/g, '>=').replace(/≤/g, '<=').replace(/→/g, 'to');
+
+      // Quote unquoted transition labels containing colons or parentheses,
+      // e.g. `A --> B : Refined (Note)` -> `A --> B : "Refined (Note)"`.
+      out = out.replace(/(-->\s*\S+\s*:)\s*([^"\n][^\n]*)$/g, (match, arrow, label) => {
+        const trimmed = label.trim();
+        if (/^["'].*['"]$/.test(trimmed)) return match;
+        return `${arrow} "${trimmed}"`;
+      });
+
+      // Normalize spaces in unquoted state identifiers: `Idea Backlog` -> `Idea_Backlog`.
+      const protectedSegments = [];
+      out = out.replace(/"[^"]*"|'[^']*'/g, (m) => {
+        const key = `__MERMAID_Q${protectedSegments.length}__`;
+        protectedSegments.push(m);
+        return key;
+      });
+      out = out.replace(/([A-Za-z][A-Za-z0-9_]*(?: [A-Za-z0-9_]+)+)/g, (m) => m.replace(/ /g, '_'));
+      protectedSegments.forEach((seg, i) => {
+        out = out.replace(`__MERMAID_Q${i}__`, seg);
+      });
+    }
+
+    return out;
   }).join('\n');
 }
 
 export function renderMarkdown(text) {
   if (!text) return '';
+
+  // Ensure Markdown headings always start on a fresh line (blank line before
+  // `##` / `###`) so they render as headings instead of raw `##` text, in the
+  // chat UI and in exported PDFs alike.
+  text = text.replace(/\n+(?=#+\s)/g, '\n\n')
 
   const renderer = new marked.Renderer();
 
