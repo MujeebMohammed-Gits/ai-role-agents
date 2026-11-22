@@ -28,13 +28,17 @@ from core.trace import TraceEmitter
 # XML Atom feed; remaining IDs should be confirmed against
 # https://www.youtube.com/feeds/videos.xml?channel_id=<ID> before production.
 VERIFIED_OFFICIAL_CHANNELS: dict[str, str] = {
+    "Scrum.org": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
     "Atlassian": "UC2YJ6-_H4g5xW4K2xkXe4tg",
     "Google Cloud Tech": "UC_x5XG1OV2P6uZZ5FSM9Ttw",
     "CNCF": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
     "NVIDIA": "UC3tYXkP-U4QXjJZL5lJ5X-Q",
     "GOTO Conferences": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
     "Microsoft Developer": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "Scrum.org": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
+    "InfoQ": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
+    "Thoughtworks": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
+    "Nielsen Norman Group": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
+    "HashiCorp": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
 }
 
 # Curated verified conference / organizational video fallback. Used when a
@@ -114,6 +118,41 @@ def _strip_html(raw: str) -> str:
 
 def _normalize_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
+
+
+_STOPWORDS: set[str] = {
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+    "be", "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "must", "shall", "can", "this", "that", "these",
+    "those", "i", "you", "he", "she", "it", "we", "they", "me", "him", "her",
+    "us", "them", "my", "your", "his", "her", "its", "our", "their",
+    "what", "which", "who", "whom", "whose", "where", "when", "why", "how",
+    "all", "each", "every", "both", "either", "neither", "any", "some", "such",
+    "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very",
+    "just", "also", "even", "still", "already", "yet", "ever", "never",
+}
+
+
+def _query_keywords(query: str) -> set[str]:
+    """Extract meaningful keywords from a user query, excluding stopwords."""
+    if not query:
+        return set()
+    words = re.findall(r"[a-z0-9]+", query.lower())
+    return {w for w in words if w not in _STOPWORDS and len(w) > 2}
+
+
+def _video_relevance_score(video: dict[str, str], keywords: set[str]) -> int:
+    """Score a video by keyword overlap against its title/channel/source text."""
+    if not keywords:
+        return 0
+    text = " ".join([
+        video.get("title", ""),
+        video.get("channel", ""),
+        video.get("source", ""),
+        video.get("url", ""),
+    ]).lower()
+    return sum(1 for kw in keywords if kw in text)
 
 
 # --------------------------------------------------------------------------- #
@@ -358,15 +397,18 @@ async def search_web_sources(
 
 
 async def fetch_verified_videos(
+    query: str = "",
     emitter: Optional[TraceEmitter] = None,
 ) -> list[dict[str, str]]:
     """Fetch 1–2 verified official organizational YouTube videos for the
     ``### Official Organizational Video Briefings`` appendix.
 
-    Tries each verified channel's XML Atom feed; falls back to the curated
-    conference list if feeds time out or return nothing. Never returns videos
-    from random individuals or third-party training bootcamps.
+    Only returns videos that are topically relevant to the user's query
+    (minimum keyword-overlap score >= 2). Returns ``[]`` when no official
+    organizational video genuinely matches the topic — never attaches an
+    unrelated random video.
     """
+    keywords = _query_keywords(query)
     timeout = httpx.Timeout(3.0, connect=3.0, read=3.0)
     async with httpx.AsyncClient(
         timeout=timeout,
@@ -383,15 +425,17 @@ async def fetch_verified_videos(
                     timeout=3.0,
                 )
                 if videos:
-                    return videos[:2]
+                    if keywords:
+                        scored = [
+                            v for v in videos
+                            if _video_relevance_score(v, keywords) >= 2
+                        ]
+                        if scored:
+                            return scored[:2]
+                    else:
+                        return videos[:2]
             except Exception:  # noqa: BLE001 — try next channel
                 continue
 
-    # Fallback: curated verified conference / organizational videos.
-    if emitter is not None:
-        await emitter.web_search({
-            "query": "official organizational videos",
-            "returned": len(FALLBACK_VIDEOS),
-            "fallback": True,
-        })
-    return list(FALLBACK_VIDEOS[:2])
+    # No topic-relevant official organizational video found — return empty.
+    return []

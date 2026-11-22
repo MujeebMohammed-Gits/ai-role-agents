@@ -538,10 +538,14 @@ export default function App() {
     setTraceEvents([]);
   }, [sessionId]);
 
+  const hasCompletedAgentChat = Boolean(
+    selectedAgent && !loading && conversation.some((m) => m.role === 'assistant' && (m.content || '').trim().length > 0)
+  );
+
   const handleDownloadPdf = useCallback(async () => {
-    if (!selectedAgent || conversation.length === 0) return;
+    if (!hasCompletedAgentChat) return;
     await downloadConversationPdf(selectedAgent, conversation);
-  }, [selectedAgent, conversation]);
+  }, [selectedAgent, conversation, loading]);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -633,7 +637,7 @@ export default function App() {
             <button
               onClick={handleDownloadPdf}
               className="btn-ghost text-[11px] px-3 py-2"
-              disabled={!selectedAgent || conversation.length === 0}
+              disabled={!hasCompletedAgentChat}
               title="Download conversation PDF"
             >
               <Download size={14} className="mr-1" />
@@ -649,7 +653,7 @@ export default function App() {
             </button>
             <button
               onClick={() => {
-                if (conversation.length > 0) {
+                if (hasCompletedAgentChat) {
                   setShowPdfModal(true);
                 } else {
                   setSelectedAgent(null);

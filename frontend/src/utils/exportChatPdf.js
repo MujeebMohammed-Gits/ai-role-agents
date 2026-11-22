@@ -1,153 +1,115 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { renderMermaidDiagrams } from './markdownRenderer.js';
 
-/**
- * Download a conversation as a high-contrast PDF.
- *
- * Renders each message block with Mermaid diagrams scaled to full width,
- * video references as cards, and block-aware page breaks between messages.
- */
 export async function downloadConversationPdf(agent, conversation) {
   if (!agent || !conversation || conversation.length === 0) return;
 
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
-
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 15;
   const contentWidth = pageWidth - 2 * margin;
+  const pageFill = pageHeight - margin;
 
-  let y = margin;
+  const wrapper = document.createElement('div');
+  wrapper.style.position = 'fixed';
+  wrapper.style.left = '-9999px';
+  wrapper.style.top = '0';
+  wrapper.style.width = contentWidth + 'mm';
+  wrapper.style.background = '#ffffff';
+  wrapper.style.color = '#000000';
+  wrapper.style.fontFamily = 'Inter, system-ui, -apple-system, sans-serif';
+  wrapper.style.fontSize = '11.5px';
+  wrapper.style.lineHeight = '1.55';
+  wrapper.style.overflow = 'visible';
+  wrapper.style.maxHeight = 'none';
+  wrapper.style.padding = '0';
+  wrapper.style.textAlign = 'left';
 
-  // High-contrast base: black text on white background.
-  pdf.setFillColor(255, 255, 255);
-  pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+  const style = document.createElement('style');
+  style.textContent = '* { color: #000 !important; background: #fff !important; } table { border: 1px solid #000; border-collapse: collapse; width: 100%; } th, td { border: 1px solid #000; padding: 4px 6px; text-align: left; } h1, h2, h3, h4 { color: #000 !important; border: none !important; text-decoration: none !important; margin: 10px 0 6px !important; line-height: 1.55 !important; break-inside: avoid; } p { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; } li { margin: 3px 0; line-height: 1.55 !important; break-inside: avoid; } ul, ol { margin: 6px 0 6px 20px; break-inside: avoid; } blockquote { border-left: 3px solid #000; padding-left: 10px; margin: 8px 0; break-inside: avoid; } pre { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; } .mermaid-viewport { width: 100% !important; overflow: visible !important; margin: 8px 0; } .mermaid-viewport svg { max-width: 720px !important; max-height: 460px !important; width: auto !important; height: auto !important; display: block; margin: 0 auto; } .mermaid-rendered, .video-wrapper { break-inside: avoid; margin: 8px 0; } .message-block { break-inside: avoid; margin-bottom: 12px; } .role-label { font-size: 9px; font-weight: bold; margin: 0 0 2px; }';
+  wrapper.appendChild(style);
 
-  // Document header.
-  pdf.setFontSize(18);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 0, 0);
-  pdf.text(agent.title || agent.role, margin, y);
-  y += 10;
-
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(80, 80, 80);
-  pdf.text(`Role: ${agent.role}`, margin, y);
-  pdf.text(`Exported: ${new Date().toLocaleString()}`, margin, y + 6);
-  y += 18;
-
-  for (let i = 0; i < conversation.length; i++) {
-    const message = conversation[i];
+  for (const message of conversation) {
     const isUser = message.role === 'user';
-
-    // Block-aware page break: start a fresh page before each agent block
-    // when there isn't enough vertical room left.
-    if (!isUser && i > 0 && y + 35 > pageHeight - margin) {
-      pdf.addPage();
-      y = margin;
-      pdf.setFillColor(255, 255, 255);
-      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
-    }
-
-    // Message role / time header.
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(isUser ? 0 : 20, isUser ? 60 : 60, isUser ? 120 : 60);
-    pdf.text(isUser ? 'User' : 'Agent', margin, y);
-
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(110, 110, 110);
-    pdf.text(new Date(message.ts || Date.now()).toLocaleTimeString(), margin + 22, y);
-    y += 8;
-
-    // Build a high-contrast HTML block for this message so html2canvas can
-    // capture it faithfully (including Mermaid SVGs and video cards).
-    const container = document.createElement('div');
-    container.style.width = `${contentWidth}mm`;
-    container.style.background = '#ffffff';
-    container.style.color = '#000000';
-    container.style.padding = '10px';
-    container.style.fontFamily = 'Inter, system-ui, -apple-system, sans-serif';
-    container.style.fontSize = '11.5px';
-    container.style.lineHeight = '1.5';
-
-    const style = document.createElement('style');
-    style.textContent = `
-      * { color: #000 !important; background: #fff !important; }
-      table { border: 1px solid #000; border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #000; padding: 4px 6px; text-align: left; }
-      h1, h2, h3, h4 { color: #000; border-bottom: 1px solid #000; margin: 10px 0 6px; }
-      p { margin: 6px 0; }
-      ul, ol { margin: 6px 0 6px 20px; }
-      blockquote { border-left: 3px solid #000; padding-left: 10px; margin: 8px 0; }
-      .mermaid-viewport { width: 100% !important; overflow: auto !important; margin: 8px 0; }
-      .mermaid-viewport svg { max-width: 100% !important; width: auto !important; height: auto !important; display: block; margin: 0 auto; }
-      .video-reference-card { border: 1px solid #000; background: #f5f5f5; padding: 10px; margin: 8px 0; }
-      .video-reference-card iframe { border: 1px solid #000; width: 100%; height: auto; }
-    `;
-    container.appendChild(style);
-
+    const block = document.createElement('div');
+    block.className = 'message-block';
+    block.style.marginBottom = '14px';
+    block.style.breakInside = 'avoid';
+    const label = document.createElement('div');
+    label.className = 'role-label';
+    label.style.color = isUser ? '#003c8f' : '#141414';
+    label.textContent = isUser ? 'User' : 'Agent';
+    block.appendChild(label);
     const contentDiv = document.createElement('div');
     contentDiv.innerHTML = message.rendered || message.content || '';
-
-    // Replace YouTube iframes with reference cards so PDFs show a link
-    // instead of an unplayable embedded player.
     contentDiv.querySelectorAll('iframe[src*="youtube.com/embed"]').forEach((iframe) => {
       const card = document.createElement('div');
-      card.className = 'video-reference-card';
+      card.className = 'video-wrapper';
       card.style.border = '1px solid #000';
       card.style.background = '#f5f5f5';
       card.style.padding = '10px';
       card.style.margin = '8px 0';
-
+      card.style.breakInside = 'avoid';
       const title = document.createElement('div');
       title.style.fontWeight = 'bold';
       title.style.marginBottom = '4px';
       title.textContent = 'Video Reference';
-
       const url = document.createElement('div');
       url.style.fontSize = '11px';
       url.textContent = iframe.src;
-
       card.appendChild(title);
       card.appendChild(url);
       iframe.replaceWith(card);
     });
+    block.appendChild(contentDiv);
+    wrapper.appendChild(block);
+  }
 
-    container.appendChild(contentDiv);
-    document.body.appendChild(container);
+  document.body.appendChild(wrapper);
 
-    try {
-      const canvas = await html2canvas(container, {
+  try {
+    await renderMermaidDiagrams(wrapper);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+    pdf.setFontSize(18);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(String(agent.title || agent.role), margin, margin);
+    let y = margin + 10;
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(80, 80, 80);
+    pdf.text('Role: ' + agent.role, margin, y);
+    pdf.text('Exported: ' + new Date().toLocaleString(), margin, y + 6);
+    y += 18;
+
+    for (const block of wrapper.querySelectorAll('.message-block')) {
+      const canvas = await html2canvas(block, {
         width: Math.floor((contentWidth * 96) / 25.4),
         scale: 2,
         logging: false,
         useCORS: true,
       });
-
-      const imgWidth = contentWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      if (y + imgHeight > pageHeight - margin) {
+      let imgHeight = (canvas.height * contentWidth) / canvas.width;
+      const maxBlockHeight = pageHeight - 2 * margin;
+      if (imgHeight > maxBlockHeight) { imgHeight = maxBlockHeight; }
+      if (y + imgHeight > pageFill) {
         pdf.addPage();
         y = margin;
         pdf.setFillColor(255, 255, 255);
         pdf.rect(0, 0, pageWidth, pageHeight, 'F');
       }
-
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, y, imgWidth, imgHeight);
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, y, contentWidth, imgHeight);
       y += imgHeight + 10;
-    } finally {
-      document.body.removeChild(container);
     }
+  } finally {
+    document.body.removeChild(wrapper);
   }
 
   const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  pdf.save(`${safeName}_conversation.pdf`);
+  pdf.save(safeName + '_conversation.pdf');
 }

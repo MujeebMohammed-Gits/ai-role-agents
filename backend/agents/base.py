@@ -519,10 +519,10 @@ class BaseAgent:
         response = re.sub("「[^」]*」", "", response)
         if "### Official Organizational Video Briefings" not in response:
             try:
-                videos = await fetch_verified_videos(emitter=trace)
-                if videos:
+                missing_vids = await fetch_verified_videos(query=query, emitter=trace)
+                if missing_vids:
                     video_lines = "\n".join(
-                        f"- [{v['title']}]({v['url']})" for v in videos[:2]
+                        f"- [{v['title']}]({v['url']})" for v in missing_vids[:2]
                     )
                     response += f"\n\n### Official Organizational Video Briefings\n\n{video_lines}"
             except Exception:  # noqa: BLE001 — videos are best-effort
