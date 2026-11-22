@@ -67,6 +67,12 @@ RESPONSE QUALITY & GROUNDING STANDARDS:
 
 
 
+def _ensure_heading_blank_line(response: str) -> str:
+    """Ensure every Markdown heading (## / ###) is preceded by a blank line
+    so renderers never show raw ``## `` hashes as plain text."""
+    return re.sub(r"\n+(?=#{2,}\s)", "\n\n", response)
+
+
 class BaseAgent:
     def __init__(
         self,
@@ -174,10 +180,6 @@ class BaseAgent:
         return stripped[-1] not in ".!?)]`"
 
 
-def _ensure_heading_blank_line(response: str) -> str:
-    """Ensure every Markdown heading (## / ###) is preceded by a blank line
-    so renderers never show raw ``## `` hashes as plain text."""
-    return re.sub(r"\n+(?=#{2,}\s)", "\n\n", response)
 
 
 # ------------------------------------------------------------------ processing
