@@ -240,6 +240,12 @@ class BaseAgent:
                 "metadata": wh,
             })
         emit_log("info", f"Retrieved {len(context)} grounded context sources (RAG + Web)", {"count": len(context), "web_count": len(web_hits)})
+        # Pre-generation context evaluation: rank & filter before building context_text.
+        context, ctx_eval = self.evaluator.filter_and_rank_context(query, context)
+        emit_log("info", "Context evaluation complete", ctx_eval)
+        if trace:
+            await trace.emit("trace.rag.retrieve", "rag", "retrieve",
+                             score=None, data={"query": query, "context_evaluation": ctx_eval})
         context_text = "\n".join(f"[{c['source']}] {c['text'][:750]}" for c in context)
 
         # Phase 2: Build LLM messages from system prompt, context and memory.
@@ -458,6 +464,12 @@ class BaseAgent:
                 "metadata": wh,
             })
         emit_log("info", f"Retrieved {len(context)} grounded context sources (RAG + Web)", {"count": len(context), "web_count": len(web_hits)})
+        # Pre-generation context evaluation: rank & filter before building context_text.
+        context, ctx_eval = self.evaluator.filter_and_rank_context(query, context)
+        emit_log("info", "Context evaluation complete", ctx_eval)
+        if trace:
+            await trace.emit("trace.rag.retrieve", "rag", "retrieve",
+                             score=None, data={"query": query, "context_evaluation": ctx_eval})
         context_text = "\n".join(f"[{c['source']}] {c['text'][:750]}" for c in context)
         yield {
             "event": "phase",

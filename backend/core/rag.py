@@ -99,36 +99,25 @@ class SentenceTransformersEmbeddingProvider(EmbeddingProvider):
         return [[float(v) for v in vec] for vec in embeddings]
 
 
-class MockEmbeddingProvider(EmbeddingProvider):
-    """Deterministic, key-free embedding fallback."""
-
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        import random
-        vectors: list[list[float]] = []
-        for text in texts:
-            seed = int(hashlib.sha256(text.encode()).hexdigest()[:8], 16)
-            rng = random.Random(seed)
-            vectors.append([rng.uniform(-1.0, 1.0) for _ in range(384)])
-        return vectors
-
-
 def build_embedding_provider() -> EmbeddingProvider:
     provider = (settings.embedding_provider or "sentence_transformers").lower()
     if provider == "nvidia_nim":
-        if not settings.nvidia_nim_api_key or not settings.nvidia_nim_base_url:
-            logger.warning(
-                "NVIDIA NIM embedding requested but API key/base URL missing; "
-                "falling back to sentence-transformers"
+        if settings.nvidia_nim_api_key and settings.nvidia_nim_base_url:
+            return NVIDIANIMEmbeddingProvider(
+                settings.nvidia_nim_base_url,
+                settings.nvidia_nim_api_key,
+                settings.nvidia_nim_embedding_model,
             )
-            return SentenceTransformersEmbeddingProvider(settings.hf_embedding_model)
-        return NVIDIANIMEmbeddingProvider(
-            settings.nvidia_nim_base_url,
-            settings.nvidia_nim_api_key,
-            settings.nvidia_nim_embedding_model,
+        logger.warning(
+            "NVIDIA NIM embedding requested but API key/base URL missing; "
+            "falling back to sentence-transformers"
         )
-    if provider == "sentence_transformers":
+    if provider in ("sentence_transformers", ""):
         return SentenceTransformersEmbeddingProvider(settings.hf_embedding_model)
-    return MockEmbeddingProvider()
+    raise RuntimeError(
+        f"Unknown embedding provider '{provider}'. Use 'nvidia_nim' or "
+        "'sentence_transformers'. Mock embeddings are not supported in production."
+    )
 
 
 class RAGContext:
@@ -310,9 +299,9 @@ class RAGContext:
                         overlap = len(q_tokens & t_tokens) / (len(q_tokens) or 1)
                         if overlap > 0:
                             scored.append((overlap, pt, payload))
-                    scored.sort(key=lambda x: x, reverse=True)
+                    scored.sort(key=lambda x: x[0], reverse=True)
                     docs = []
-                    best_score = round(scored, 4) if scored else 0.0
+                    best_score = round(scored[0][0], 4) if scored else 0.0
                     for sc, pt, payload in scored[:k]:
                         docs.append({
                             "id": str(pt.get("id", "")),

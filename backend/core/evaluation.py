@@ -19,6 +19,7 @@ align with the frontend Markdown/Media rendering contract.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -332,3 +333,78 @@ class SelfEvaluator:
 
     def should_revise(self, evaluation: EvaluationResult) -> bool:
         return evaluation.needs_revision and not evaluation.passed
+
+    def filter_and_rank_context(self, query: str, context_docs: list[dict], min_score: float = 0.25) -> tuple[list[dict], dict]:
+        """Score, deduplicate, and filter retrieved context chunks before generation.
+
+        Scores each chunk on query-term relevance plus source-authority weight
+        (peer-reviewed journal / RAG > article), collapses near-identical
+        snippets, drops conflicting duplicate claims (keeping the highest-scored
+        copy), and removes low-relevance noise below ``min_score``.
+
+        Returns ``(kept_docs, telemetry)`` where telemetry is
+        ``{"kept": int, "filtered_out": int, "sources": {source_type: count}}``.
+        """
+        if not context_docs:
+            return [], {"kept": 0, "filtered_out": 0, "sources": {}}
+
+        query_terms = [t for t in re.findall(r"\w+", (query or "").lower()) if len(t) > 2]
+        authority_weight = {
+            "openalex": 1.00,   # peer-reviewed journal
+            "rag": 0.90,        # vector-store retrieval
+            "youtube": 0.85,    # official organizational video
+            "duckduckgo": 0.60, # organizational article
+            "article": 0.60,
+        }
+
+        def _score(doc: dict) -> float:
+            text = (doc.get("text", "") or "") + " " + (doc.get("title", "") or "")
+            if not query_terms:
+                relevance = 0.0
+            else:
+                lowered = text.lower()
+                matched = sum(1 for t in query_terms if t in lowered)
+                relevance = matched / len(query_terms)
+            source_type = str(doc.get("source_type") or doc.get("source", "rag")).lower()
+            weight = authority_weight.get(source_type, 0.5)
+            if doc.get("official"):
+                weight = min(1.0, weight + 0.1)
+            return round(relevance * 0.6 + weight * 0.4, 4)
+
+        # Collapse near-identical snippets (same normalized text).
+        seen: set[str] = set()
+        unique: list[tuple[float, dict]] = []
+        for doc in context_docs:
+            snippet = re.sub(r"\s+", " ", (doc.get("text") or doc.get("title") or "")).lower().strip()
+            sig = hashlib.sha256(snippet.encode()).hexdigest()[:16]
+            if sig in seen:
+                continue
+            seen.add(sig)
+            unique.append((_score(doc), doc))
+
+        # Collapse conflicting duplicate claims: same source + title, keep highest score.
+        best_by_claim: dict[tuple[str, str], tuple[float, dict]] = {}
+        for score, doc in unique:
+            claim_key = (
+                str(doc.get("source_type") or doc.get("source", "")).lower(),
+                (doc.get("title") or doc.get("source") or "").strip().lower(),
+            )
+            existing = best_by_claim.get(claim_key)
+            if existing is None or score > existing[0]:
+                best_by_claim[claim_key] = (score, doc)
+
+        ranked = sorted(best_by_claim.values(), key=lambda x: x[0], reverse=True)
+
+        kept: list[dict] = []
+        dropped = 0
+        sources: dict[str, int] = {}
+        for score, doc in ranked:
+            if score < min_score:
+                dropped += 1
+                continue
+            kept.append(doc)
+            st = str(doc.get("source_type") or doc.get("source", "unknown")).lower()
+            sources[st] = sources.get(st, 0) + 1
+
+        telemetry = {"kept": len(kept), "filtered_out": dropped, "sources": sources}
+        return kept, telemetry

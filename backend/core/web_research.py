@@ -28,23 +28,18 @@ from core.trace import TraceEmitter
 # XML Atom feed; remaining IDs should be confirmed against
 # https://www.youtube.com/feeds/videos.xml?channel_id=<ID> before production.
 VERIFIED_OFFICIAL_CHANNELS: dict[str, str] = {
-    "Scrum.org": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "Atlassian": "UC2YJ6-_H4g5xW4K2xkXe4tg",
-    "Google Cloud Tech": "UC_x5XG1OV2P6uZZ5FSM9Ttw",
-    "CNCF": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "NVIDIA": "UC3tYXkP-U4QXjJZL5lJ5X-Q",
-    "GOTO Conferences": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "Microsoft Developer": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "InfoQ": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "Thoughtworks": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "Nielsen Norman Group": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
-    "HashiCorp": "UC1h4j9CxS4XO1LqZ5lJ5X-Q",
+    "Atlassian": "UCLXo7UDZvByw2ixzpQCufnA",
+    "Google Cloud Tech": "UCJS9pqu9BzkAMNTmzNMNhvg",
+    "CNCF": "UCvqbFHwN-nwalWPjPUKpvTA",
+    "NVIDIA": "UCHuiy8bXnmK5nisYHUd1J5g",
+    "GOTO Conferences": "UCs_tLP3AiwYKwdUHpltJPuA",
+    "Microsoft Developer": "UCsMica-v34Irf9KVTh6xx-g",
+    "HashiCorp": "UC-Royw29u1-263-299276645g",
 }
 
 OFFICIAL_YOUTUBE_AUTHORS: set[str] = {
     "Atlassian", "Google Cloud Tech", "CNCF", "NVIDIA",
-    "GOTO Conferences", "Microsoft Developer", "Scrum.org",
-    "InfoQ", "Thoughtworks", "HashiCorp",
+    "GOTO Conferences", "Microsoft Developer", "HashiCorp",
 }
 
 # Curated verified conference / organizational video fallback. Used when a

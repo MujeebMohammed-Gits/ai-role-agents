@@ -57,7 +57,7 @@ class Settings:
     ])
 
     # LLM
-    llm_provider: str = field(default_factory=lambda: _env("LLM_PROVIDER", "mock"))
+    llm_provider: str = field(default_factory=lambda: _env("LLM_PROVIDER", "openai"))
     llm_model: str = field(default_factory=lambda: _env("LLM_MODEL", "mock-agent"))
     openai_api_key: str = field(default_factory=lambda: _env("OPENAI_API_KEY", ""))
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
