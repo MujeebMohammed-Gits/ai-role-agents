@@ -53,12 +53,18 @@ class AgentResult:
 
 
 QUALITY_DIRECTIVE = (
-    "\n\nRESPONSE QUALITY & GROUNDING STANDARDS:\n"
-    "1. Provide a complete, thorough, well-structured executive answer?never truncate mid-sentence.\n"
-    "2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N].\n"
-    "3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.\n"
-    "4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).\n""5. Keep tables concise (max 5 rows) and always finish every section and closing summary cleanly before reaching token limits."
+    """
+
+RESPONSE QUALITY & GROUNDING STANDARDS:
+1. Provide a complete, thorough, well-structured executive answer. Never truncate mid-sentence.
+2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N].
+3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.
+4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).
+5. Finish every Markdown table row, every bullet list, and the closing `## Next Steps / Recommendations` section cleanly; never leave a table cell, sentence, or section unfinished, and never truncate mid-table or mid-sentence before reaching token limits.
+"""
 )
+
+
 
 
 class BaseAgent:
@@ -157,7 +163,17 @@ class BaseAgent:
         }
         return self._process_stream(item)
 
-    # ------------------------------------------------------------------ processing
+    def _response_is_incomplete(self, response: str) -> bool:
+        """Return True if the LLM response appears to have been cut off
+        mid-sentence, mid-table, or with an unclosed code fence."""
+        stripped = response.rstrip()
+        if not stripped:
+            return False
+        if response.count("```") % 2 != 0:
+            return True
+        return stripped[-1] not in ".!?)]`"
+
+# ------------------------------------------------------------------ processing
 
     async def _process(self, item: dict) -> None:
         query = item["query"]
@@ -242,6 +258,15 @@ class BaseAgent:
             {"provider": settings.llm_provider, "model": settings.llm_model},
         )
         response = await self.llm.complete(self.system_prompt, messages)
+        if self._response_is_incomplete(response):
+            cont_chunks: list[str] = []
+            async for chunk in self.llm.stream_complete(
+                self.system_prompt,
+                messages + [{"role": "user", "content": "Continue seamlessly from the exact point where your previous output stopped to finish the remaining table rows and closing section."}],
+            ):
+                cont_chunks.append(chunk)
+            response = response + "".join(cont_chunks)
+
         await self.hooks.run("after_llm", self.role, response)
         emit_log("info", "LLM response received", {"chars": len(response)})
 
@@ -467,6 +492,16 @@ class BaseAgent:
             response_chunks.append(clean_chunk)
             yield {"event": "token", "data": clean_chunk}
         response = "".join(response_chunks)
+        if self._response_is_incomplete(response):
+            cont_chunks: list[str] = []
+            async for chunk in self.llm.stream_complete(
+                self.system_prompt,
+                messages + [{"role": "user", "content": "Continue seamlessly from the exact point where your previous output stopped to finish the remaining table rows and closing section."}],
+            ):
+                cont_chunks.append(chunk)
+                yield {"event": "token", "data": chunk}
+            response = response + "".join(cont_chunks)
+
         await self.hooks.run("after_llm", self.role, response)
         emit_log("info", "LLM response received", {"chars": len(response)})
         yield {"event": "phase", "data": {"phase": "llm_generate", "status": "complete"}}
