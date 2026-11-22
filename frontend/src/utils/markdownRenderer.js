@@ -103,7 +103,7 @@ export function renderMarkdown(text) {
   // Convert verified YouTube links to responsive 16:9 embed iframes after sanitization.
   html = html.replace(
     /<a[^>]*href="https?:\/\/(?:www\.youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})"[^>]*>.*?<\/a>/g,
-    '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://www.youtube.com/embed/$1" frameborder="0" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>'
+    '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://www.youtube-nocookie.com/embed/$1" frameborder="0" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>'
   );
 
   return html;

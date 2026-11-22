@@ -447,32 +447,106 @@ async def fetch_verified_videos(
     return []
 
 
+def _extract_player_response(html: str) -> dict | None:
+    """Extract the ``ytInitialPlayerResponse`` JSON object from a YouTube watch page.
+
+    Uses brace-counting (string-aware) so nested JSON inside the HTML is
+    captured reliably — a regex cannot match balanced braces.
+    """
+    marker = "ytInitialPlayerResponse"
+    start = html.find(marker)
+    if start == -1:
+        return None
+    eq = html.find("=", start)
+    if eq == -1:
+        return None
+    brace = html.find("{", eq)
+    if brace == -1:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(brace, len(html)):
+        ch = html[i]
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if in_string:
+            if ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(html[brace:i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
 async def _verify_youtube_embeddable(
     client: httpx.AsyncClient, video_id: str
 ) -> dict[str, str] | None:
-    """Verify a YouTube video is publicly embeddable via the official oEmbed API.
+    """Verify a YouTube video is publicly embeddable.
 
-    Returns a dict with verified title/author_name/video_id/url when the video
-    returns HTTP 200 and its author is an official organizational channel.
-    Returns None otherwise (video unavailable, private, or non-embeddable).
+    A video is considered playable only when BOTH:
+      * oEmbed returns HTTP 200 with an official organizational author_name, and
+      * the watch page's ``ytInitialPlayerResponse`` has
+        ``playabilityStatus.status == "OK"`` and ``playableInEmbed == true``.
+    Returns a dict with verified title/author_name/video_id/url when both pass,
+    or None otherwise (video unavailable, private, or non-embeddable).
     """
     oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
     try:
-        resp = await client.get(oembed_url, timeout=3.0)
-        if resp.status_code != 200:
+        oembed_resp = await client.get(oembed_url, timeout=3.0)
+        if oembed_resp.status_code != 200:
             return None
-        data = resp.json()
-        author_name = data.get("author_name", "")
+        oembed_data = oembed_resp.json()
+        author_name = oembed_data.get("author_name", "")
         if author_name not in OFFICIAL_YOUTUBE_AUTHORS:
             return None
-        return {
-            "title": data.get("title", ""),
-            "author_name": author_name,
-            "video_id": video_id,
-            "url": f"https://www.youtube.com/watch?v={video_id}",
-        }
     except Exception:  # noqa: BLE001 — oEmbed is best-effort
         return None
+
+    # Confirm actual iframe embeddability from the watch page player response.
+    watch_url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        watch_resp = await client.get(
+            watch_url,
+            timeout=3.0,
+            cookies={"CONSENT": "YES+1"},
+        )
+        if watch_resp.status_code != 200:
+            return None
+        player = _extract_player_response(watch_resp.text)
+        if not isinstance(player, dict):
+            return None
+        playability = player.get("playabilityStatus") or {}
+        if playability.get("status") != "OK":
+            return None
+        playable_in_embed = playability.get(
+            "playableInEmbed", player.get("playableInEmbed")
+        )
+        if playable_in_embed is not True:
+            return None
+    except Exception:  # noqa: BLE001 — watch page is best-effort
+        return None
+
+    return {
+        "title": oembed_data.get("title", ""),
+        "author_name": author_name,
+        "video_id": video_id,
+        "url": watch_url,
+    }
 
 
 async def search_youtube_videos(
