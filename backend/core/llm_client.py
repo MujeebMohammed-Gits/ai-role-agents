@@ -17,6 +17,8 @@ from collections.abc import AsyncIterator
 
 logger = logging.getLogger("core.llm_client")
 
+from config.settings import _NVIDIA_NIM_CANONICAL_BASE_URL, _normalize_nvidia_base_url
+
 
 class LLMClient:
     async def complete(
@@ -65,17 +67,18 @@ def build_client(provider: str, model: str, **kwargs) -> LLMClient:
         _api_key = _openai_key
         if not _api_key:
             raise RuntimeError("Production LLM API key is required (OPENAI_API_KEY or ANTHROPIC_API_KEY)")
-        _default_base = (
-            "https://integrate.api.nvidia.com/v1"
-            if _api_key.startswith("nvapi-")
-            else "https://api.openai.com/v1"
-        )
-        _base_url = (
-            os.environ.get("OPENAI_BASE_URL")
-            or os.environ.get("OPENAI_API_BASE")
-            or kwargs.get("openai_api_base")
-            or _default_base
-        ).strip()
+        if _api_key.startswith("nvapi-"):
+            # NVIDIA NIM: always use the canonical integrate API endpoint so the
+            # broken ``https://nvidia.com`` host can never cause a 404.
+            _base_url = _NVIDIA_NIM_CANONICAL_BASE_URL
+        else:
+            _default_base = "https://api.openai.com/v1"
+            _base_url = _normalize_nvidia_base_url(
+                os.environ.get("OPENAI_BASE_URL")
+                or os.environ.get("OPENAI_API_BASE")
+                or kwargs.get("openai_api_base")
+                or _default_base
+            )
         return _OpenAILLMClient(
             AsyncOpenAI(api_key=_api_key, base_url=_base_url, timeout=90.0), model
         )
@@ -97,10 +100,56 @@ def build_client(provider: str, model: str, **kwargs) -> LLMClient:
     )
 
 
+_FALLBACK_MODEL = "meta/llama-3.3-70b-instruct"
+
+
 class _OpenAILLMClient(LLMClient):
     def __init__(self, client: object, model: str) -> None:
         self._client = client
         self._model = model
+
+    def _is_retriable_nvidia_404(self, exc) -> bool:
+        """True if ``exc`` is a 404 NotFoundError from the NVIDIA NIM endpoint.
+
+        Only NVIDIA NIM 404s are retried with the fallback model; any other
+        provider's 404 is still surfaced to the caller.
+        """
+        if "integrate.api.nvidia.com" not in str(getattr(self._client, "base_url", "")):
+            return False
+        status = getattr(exc, "status_code", None)
+        if status is None:
+            response = getattr(exc, "response", None)
+            status = getattr(response, "status_code", None) if response is not None else None
+        if status is not None:
+            try:
+                return int(status) == 404
+            except (TypeError, ValueError):
+                return False
+        text = str(exc).lower()
+        return "404" in text and ("not found" in text or "notfound" in text)
+
+    async def _create_with_fallback(self, chat: list[dict], max_tokens: int, stream: bool = False):
+        """Create a chat completion, retrying once with the fallback model on NVIDIA NIM 404."""
+        try:
+            return await self._client.chat.completions.create(
+                model=self._model,
+                messages=chat,
+                max_tokens=max_tokens,
+                stream=stream,
+            )
+        except Exception as exc:
+            cause = getattr(exc, "__cause__", None) or exc
+            if self._model != _FALLBACK_MODEL and self._is_retriable_nvidia_404(cause):
+                return await self._client.chat.completions.create(
+                    model=_FALLBACK_MODEL,
+                    messages=chat,
+                    max_tokens=max_tokens,
+                    stream=stream,
+                )
+            raise RuntimeError(
+                f"LLM API failed ({self._client.base_url} | model={self._model}): "
+                f"{type(cause).__name__}: {cause}"
+            ) from exc
 
     async def complete(
         self,
@@ -110,11 +159,7 @@ class _OpenAILLMClient(LLMClient):
         max_tokens: int = 6144,
     ) -> str:
         chat = [{"role": "system", "content": system_prompt}] + messages
-        resp = await self._client.chat.completions.create(
-            model=self._model,
-            messages=chat,
-            max_tokens=max_tokens,
-        )
+        resp = await self._create_with_fallback(chat, max_tokens, stream=False)
         return resp.choices[0].message.content or ""
 
 
@@ -134,17 +179,7 @@ class _OpenAILLMClient(LLMClient):
         full_messages = [{"role": "system", "content": merged_sys}] + [
             m for m in messages if m.get("role") != "system"
         ]
-        try:
-            stream = await self._client.chat.completions.create(
-                model=self._model,
-                messages=full_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-            )
-        except Exception as exc:
-            cause = getattr(exc, "__cause__", None) or exc
-            raise RuntimeError(f"LLM API failed ({self._client.base_url} | model={self._model}): {type(cause).__name__}: {cause}") from exc
+        stream = await self._create_with_fallback(full_messages, max_tokens, stream=True)
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content

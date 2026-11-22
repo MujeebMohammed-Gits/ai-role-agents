@@ -33,6 +33,27 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+_NVIDIA_NIM_CANONICAL_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+
+def _normalize_nvidia_base_url(base_url: str) -> str:
+    """Normalize a NVIDIA NIM base URL to the canonical integrate API endpoint.
+
+    The broken ``https://nvidia.com`` host (and any NVIDIA NIM host missing the
+    ``/v1`` path) returns HTTP 404 for chat completions, so it is normalized to
+    ``https://integrate.api.nvidia.com/v1``. Non-NVIDIA URLs are returned as-is.
+    """
+    if not base_url:
+        return base_url
+    url = base_url.strip()
+    lowered = url.lower().rstrip("/")
+    if lowered in ("https://nvidia.com", "http://nvidia.com"):
+        return _NVIDIA_NIM_CANONICAL_BASE_URL
+    if "nvidia.com" in lowered and not lowered.endswith("/v1"):
+        return _NVIDIA_NIM_CANONICAL_BASE_URL
+    return url
+
+
 @dataclass
 class Settings:
     # Server
@@ -71,7 +92,9 @@ class Settings:
 
     # Embedding pipeline (nvidia_nim | sentence_transformers | mock)
     embedding_provider: str = field(default_factory=lambda: _env("EMBEDDING_PROVIDER", "sentence_transformers"))
-    nvidia_nim_base_url: str = field(default_factory=lambda: _env("NVIDIA_NIM_BASE_URL", ""))
+    nvidia_nim_base_url: str = field(
+        default_factory=lambda: _normalize_nvidia_base_url(_env("NVIDIA_NIM_BASE_URL", ""))
+    )
     nvidia_nim_api_key: str = field(default_factory=lambda: _env("NVIDIA_NIM_API_KEY", ""))
     nvidia_nim_embedding_model: str = field(default_factory=lambda: _env(
         "NVIDIA_NIM_EMBEDDING_MODEL", "nvidia/llama-3.1-nemotron-70b-instruct"))
