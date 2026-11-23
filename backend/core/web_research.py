@@ -28,6 +28,7 @@ from core.trace import TraceEmitter
 # XML Atom feed; remaining IDs should be confirmed against
 # https://www.youtube.com/feeds/videos.xml?channel_id=<ID> before production.
 VERIFIED_OFFICIAL_CHANNELS: dict[str, str] = {
+    # Pre-existing verified organizational channels (preserved).
     "Atlassian": "UCLXo7UDZvByw2ixzpQCufnA",
     "Google Cloud Tech": "UCJS9pqu9BzkAMNTmzNMNhvg",
     "CNCF": "UCvqbFHwN-nwalWPjPUKpvTA",
@@ -37,12 +38,44 @@ VERIFIED_OFFICIAL_CHANNELS: dict[str, str] = {
     "HashiCorp": "UC-Royw29u1-263-299276645g",
     "InfoQ": "UCkQX1tChV7Z7l1LFF4L9j_g",
     "Nielsen Norman Group": "UC2oCugzU6W8-h95W7eBTUEg",
+    # Governing-body channels verified against the 21-discipline registry
+    # (channel IDs confirmed via HTTP 200 on the YouTube Atom feed).
+    "Scrum.org": "UCjX8DX2unX1Os3zZeMs-IWA",
+    "Kanban University": "UCf6OUQNcoiOEJrx0-hDI6WA",
+    "Scaled Agile, Inc.": "UC-n4Mb-Bu5Pgl0z5L1jyhSQ",
+    "Product School": "UC6hlQ0x6kPbAGjYkoz53cvA",
+    "USENIX Association": "UC4-GrpQBx6WCGwmwozP744Q",
+    "IIBA": "UCtpU0wWTg_QBEXnp4HujLEg",
 }
 
 OFFICIAL_YOUTUBE_AUTHORS: set[str] = {
     "Atlassian", "Google Cloud Tech", "CNCF", "NVIDIA",
     "GOTO Conferences", "Microsoft Developer", "HashiCorp",
     "InfoQ", "Nielsen Norman Group",
+    "Scrum.org", "Kanban University", "David J. Anderson School of Management", "Scaled Agile, Inc.",
+    "Product School", "USENIX Association", "USENIX", "IIBA",
+}
+
+# Channel -> discipline / role keywords. Maps each verified channel to the
+# governing-body disciplines it covers, so the codebase can tag which topics a
+# channel is authoritative for. The existing name -> channel_id structure of
+# VERIFIED_OFFICIAL_CHANNELS is preserved so feed fetching is unchanged.
+CHANNEL_DISCIPLINES: dict[str, list[str]] = {
+    "Atlassian": [],
+    "Google Cloud Tech": [],
+    "CNCF": ["platform engineering"],
+    "NVIDIA": [],
+    "GOTO Conferences": [],
+    "Microsoft Developer": [],
+    "HashiCorp": [],
+    "InfoQ": [],
+    "Nielsen Norman Group": ["user research"],
+    "Scrum.org": ["scrum", "product owner", "scrum master"],
+    "Kanban University": ["kanban"],
+    "Scaled Agile, Inc.": ["safe"],
+    "Product School": ["product"],
+    "USENIX Association": ["sre"],
+    "IIBA": ["business analysis"],
 }
 
 # Curated verified conference / organizational video fallback. Used when a
