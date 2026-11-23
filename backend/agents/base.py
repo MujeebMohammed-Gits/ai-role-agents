@@ -303,7 +303,19 @@ class BaseAgent:
                  {"passed": gr.passed, "violations": gr.violations})
 
         # Phase 5/6: Evaluation (single pass — no response regeneration).
-        evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+        try:
+            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+        except Exception as exc:  # noqa: BLE001: never abort on evaluation failure
+            logger.exception("Agent %s evaluation failed: %s", self.name, exc)
+            evaluation = EvaluationResult(
+                passed=False,
+                score=0.0,
+                feedback=f"Evaluation unavailable: {exc}",
+                needs_revision=False,
+                suggestions=[],
+                stage_scores={},
+                meta={"error": str(exc)},
+            )
         loop = 0
 
         # Surgical guardrail refinement: at most one fast pass when Pass 1 is
@@ -550,8 +562,17 @@ class BaseAgent:
 
         # Phase 4: System Guardrail Evaluation.
         yield {"event": "phase", "data": {"phase": "guardrail", "status": "start"}}
-        gr = self.evaluator.apply_guardrails(response)
-        response = gr.sanitized_response
+        try:
+            gr = self.evaluator.apply_guardrails(response)
+            response = gr.sanitized_response
+        except Exception as exc:  # noqa: BLE001: never abort streaming on guardrail failure
+            logger.exception("Agent %s guardrail failed: %s", self.name, exc)
+            gr = GuardrailResult(
+                passed=True,
+                violations=[],
+                sanitized_response=response,
+                meta={"error": str(exc)},
+            )
         entry = await trace_record("trace.guardrail.evaluate", "guardrail", "evaluate",
                                    score=1.0 if gr.passed else 0.0,
                                    data={"violations": gr.violations,
@@ -566,37 +587,52 @@ class BaseAgent:
 
         # Phase 5/6: Evaluation (single pass — no response regeneration).
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}
-        evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
-        loop = 0
-        yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
-                                          "score": evaluation.score, "passed": evaluation.passed}}
-
-        # Surgical guardrail refinement: at most one fast pass when Pass 1 is
-        # below the Eval 88 threshold. Appends only the missing delta (missing
-        # sections / citations) without repeating any section already written,
-        # then re-scores so the final response reaches Eval 88+.
-        if self.evaluator.should_revise(evaluation) and loop < 1:
-            if response.count("```") % 2 != 0:
-                response += "\n```"
-            instruction = (
-                "Output ONLY the missing section(s) or citations listed below, "
-                "in <= 220 words, without repeating any already-written section:\n"
-                + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
-            )
-            refinement_messages = [
-                {"role": "system", "content": self.system_prompt},
-                {"role": "assistant", "content": response},
-                {"role": "user", "content": instruction},
-            ]
-            delta_chunks: list[str] = []
-            async for chunk in self.llm.stream_complete(self.system_prompt, refinement_messages):
-                delta_chunks.append(chunk)
-                yield {"event": "token", "data": chunk}
-            delta = "".join(delta_chunks)
-            if delta.strip():
-                response = response.rstrip() + "\n\n" + delta.strip()
+        try:
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
-            loop = 1
+            loop = 0
+            yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
+                                              "score": evaluation.score, "passed": evaluation.passed}}
+
+            # Surgical guardrail refinement: at most one fast pass when Pass 1 is
+            # below the Eval 88 threshold. Appends only the missing delta (missing
+            # sections / citations) without repeating any section already written,
+            # then re-scores so the final response reaches Eval 88+.
+            if self.evaluator.should_revise(evaluation) and loop < 1:
+                if response.count("```") % 2 != 0:
+                    response += "\n```"
+                instruction = (
+                    "Output ONLY the missing section(s) or citations listed below, "
+                    "in <= 220 words, without repeating any already-written section:\n"
+                    + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
+                )
+                refinement_messages = [
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "assistant", "content": response},
+                    {"role": "user", "content": instruction},
+                ]
+                delta_chunks: list[str] = []
+                async for chunk in self.llm.stream_complete(self.system_prompt, refinement_messages):
+                    delta_chunks.append(chunk)
+                    yield {"event": "token", "data": chunk}
+                delta = "".join(delta_chunks)
+                if delta.strip():
+                    response = response.rstrip() + "\n\n" + delta.strip()
+                evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+                loop = 1
+        except Exception as exc:  # noqa: BLE001 — never abort streaming on evaluation failure
+            logger.exception("Agent %s evaluation failed: %s", self.name, exc)
+            evaluation = EvaluationResult(
+                passed=False,
+                score=0.0,
+                feedback=f"Evaluation unavailable: {exc}",
+                needs_revision=False,
+                suggestions=[],
+                stage_scores={},
+                meta={"error": str(exc)},
+            )
+            loop = 0
+            yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
+                                              "score": evaluation.score, "passed": evaluation.passed}}
 
         # Close any unclosed code fence, strip markers, append official videos.
         if response.count("```") % 2 != 0:

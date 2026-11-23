@@ -269,7 +269,7 @@ class SelfEvaluator:
         query_lower = (query or "").lower()
 
         # --- Stage 1: Relevance (query term coverage + context uptake) ---
-        relevance = self._relevance_score(response_lower, query_lower, context_text)
+        relevance = self._relevance_score(response_lower, query_lower, context)
 
         # --- Stage 2: Grounding (citations & framework attributions) ---
         grounding = self._grounding_score(response, response_lower)

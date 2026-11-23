@@ -99,6 +99,7 @@ export async function downloadConversationPdf(agent, conversation) {
 
   host.appendChild(wrapper);
 
+  let pdfSaved = false;
   try {
     await renderMermaidDiagrams(wrapper);
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -110,6 +111,11 @@ export async function downloadConversationPdf(agent, conversation) {
       logging: false,
       useCORS: true,
       onclone: (clonedDoc) => {
+        // 0. Remove every author stylesheet from the cloned document so
+        //    html2canvas never parses unsupported color functions
+        //    (oklch / oklab / color-mix) from Tailwind or other bundled CSS.
+        clonedDoc.querySelectorAll("style, link[rel=stylesheet]").forEach((el) => el.remove());
+
         // 1. Size every rendered Mermaid SVG full-size and razor-sharp using its
         // viewBox (pure SVG labels, htmlLabels: false, so html2canvas can
         // rasterize them instead of leaving blank boxes).
@@ -299,8 +305,51 @@ export async function downloadConversationPdf(agent, conversation) {
 
     const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, "_").toLowerCase();
     pdf.save(safeName + "_conversation.pdf");
+    pdfSaved = true;
   } catch (err) {
-    console.error("[downloadConversationPdf] Error during PDF generation:", err);
+    console.error("[downloadConversationPdf] html2canvas path failed, using text-PDF fallback:", err);
+    if (!pdfSaved) {
+      try {
+        const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(11);
+        pdf.setTextColor(15, 23, 42);
+        let y = margin;
+        pdf.text("AI Role Agents portal", margin, y);
+        y += 10;
+        pdf.setFontSize(9);
+        pdf.setTextColor(100, 100, 100);
+        pdf.text("Conversation Export", margin, y);
+        y += 16;
+        pdf.setFontSize(11);
+        pdf.setTextColor(15, 23, 42);
+        for (const message of conversation) {
+          const role = message.role === "user" ? "User" : "Agent";
+          const text = String(message.rendered || message.content || "");
+          pdf.text(role + ":", margin, y);
+          y += 7;
+          const lines = pdf.splitTextToSize(text, usableWidth);
+          for (const line of lines) {
+            if (y > pageHeight - margin - footerHeight) {
+              pdf.addPage();
+              y = margin;
+            }
+            pdf.text(line, margin, y);
+            y += 6;
+          }
+          y += 6;
+        }
+        pdf.save(safeName + "_conversation.pdf");
+        pdfSaved = true;
+      } catch (fbErr) {
+        console.error("[downloadConversationPdf] text-PDF fallback failed:", fbErr);
+        try {
+          const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+          pdf.save(safeName + "_conversation.pdf");
+          pdfSaved = true;
+        } catch {}
+      }
+    }
   } finally {
     document.body.removeChild(host);
   }
@@ -318,18 +367,8 @@ function drawWatermark(pdf, pageWidth, pageHeight, text) {
   const cy = pageHeight / 2;
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(40);
-  let gstate = null;
-  try {
-    gstate = pdf.addGState({ opacity: 0.09 });
-    pdf.setGState(gstate);
-  } catch (e) {
-    pdf.setTextColor(228, 232, 245);
-  }
+  pdf.setTextColor(235, 238, 248);
   pdf.text(text, cx, cy, { angle: 32, align: "center", baseline: "middle" });
-  // Restore full opacity so page content drawn afterward is not faded.
-  try {
-    pdf.setGState(pdf.addGState({ opacity: 1 }));
-  } catch (e) {
-    pdf.setTextColor(0, 0, 0);
-  }
+  // Restore full-contrast color so page content drawn afterward is sharp.
+  pdf.setTextColor(0, 0, 0);
 }
