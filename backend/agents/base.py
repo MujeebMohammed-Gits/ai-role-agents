@@ -61,6 +61,18 @@ RESPONSE QUALITY & GROUNDING STANDARDS:
 3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.
 4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).
 5. Finish every Markdown table row, every bullet list, and the closing `## Next Steps / Recommendations` section cleanly; never leave a table cell, sentence, or section unfinished, and never truncate mid-table or mid-sentence before reaching token limits.
+
+RICH TYPOGRAPHY & SECTION STRUCTURE (every one of the 12 specialist agents):
+6. Use consistent, clean Markdown section headings prefixed with a relevant domain emoji/icon, for example:
+   - ## 🎯 Executive Overview
+   - ## 🔍 Key Observations & Context
+   - ## ⚙️ Actionable Implementation Plan
+   - ## 📊 Comparison & Metrics Matrix
+   - ## 🔀 Workflow Architecture
+   - ## ⚠️ Risks & Mitigations
+   Pick headings that fit the role's topic and domain, and keep heading text concise.
+7. Write well-spaced paragraphs: 1–3 concise sentences per paragraph, separated by blank lines. Keep Markdown tables cleanly aligned, and use bulleted/numbered lists with **bold** lead-ins throughout.
+8. At the very end of every response, always include a dedicated closing section `## 💡 Suggested Next Steps & Follow-Up Questions` containing 3–4 tailored, clickable-style prompt ideas directly aligned with the user's specific topic and domain so the user can effortlessly continue the conversation.
 """
 )
 
@@ -91,8 +103,8 @@ class BaseAgent:
         self.name = name
         req_secs = ", ".join(f"## {s}" for s in evaluator.required_sections_for(role))
         role_contract = (
-            f"\n6. MANDATORY STRUCTURE FOR {self.name.upper()}: Include clear Markdown headings covering: {req_secs}.\n"
-            "7. Always combine BOTH numbered action steps (1. 2. 3.) AND bulleted insights (- ) in every response, and cite retrieved RAG/Web sources inline."
+            f"\n9. MANDATORY STRUCTURE FOR {self.name.upper()}: Include clear Markdown headings covering: {req_secs}.\n"
+            "10. Always combine BOTH numbered action steps (1. 2. 3.) AND bulleted insights (- ) in every response, and cite retrieved RAG/Web sources inline."
         )
         self.system_prompt = system_prompt + QUALITY_DIRECTIVE + role_contract
         self.event_bus = event_bus

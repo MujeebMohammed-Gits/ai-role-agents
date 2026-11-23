@@ -186,8 +186,12 @@ export function renderMermaidDiagrams(container) {
       const label = placeholder.querySelector('.mermaid-zoom-level');
       if (svgEl) {
         svgEl.removeAttribute('style');
+        // Crisp, readable sizing: never shrink a tall/vertical diagram (e.g.
+        // flowchart TD) below a readable width, cap at the container width, and
+        // keep height proportional so the viewport can scroll it cleanly.
         svgEl.style.maxWidth = '100%';
-        svgEl.style.maxHeight = '360px';
+        svgEl.style.maxHeight = 'none';
+        svgEl.style.minWidth = '520px';
         svgEl.style.width = 'auto';
         svgEl.style.height = 'auto';
         svgEl.style.display = 'block';
