@@ -217,17 +217,49 @@ class SelfEvaluator:
 
         Recognizes ``[Reference #N]``, Markdown URL citations
         ``[Title](URL)`` and known framework attributions (Scrum Guide, Team
-        Topologies, DORA, OKRs, RICE, MoSCoW).
+        Topologies, DORA, NIST, PMI, BABOK, OKRs, RICE, MoSCoW).
+
+        The two citation forms together carry most of the score so a single
+        citation style alone does not carry the stage; naming a couple of
+        frameworks lifts a well-cited response into the 0.85-0.98 band.
         """
         score = 0.0
         if re.search(r"\[Reference\s*#\d+\]", response):
-            score += 0.5
+            score += 0.40
         if re.search(r"\[[^\]]+\]\(https?://[^)]+\)", response):
-            score += 0.5
-        frameworks = ("scrum guide", "team topologies", "dora", "okr", "rice", "moscow")
-        if any(fw in response_lower for fw in frameworks):
-            score += 0.2
+            score += 0.40
+        frameworks = (
+            "scrum guide", "team topologies", "dora", "nist", "pmi", "babok",
+            "okr", "rice", "moscow",
+        )
+        fw_matched = sum(1 for fw in frameworks if fw in response_lower)
+        score += min(0.25, fw_matched * 0.08)
         return min(1.0, score)
+
+    def _relevance_score(self, response_lower: str, query_lower: str,
+                         context_text: str) -> float:
+        """Score relevance by query-term coverage plus retrieved-context uptake.
+
+        A response that addresses the user's core query terms and works in
+        concepts from the retrieved RAG/web context scores in the 0.85-0.98
+        band; pure term matching alone is softened so a response that covers
+        most query terms and reflects the retrieved sources is not penalized
+        for every incidental query word.
+        """
+        query_terms = [t for t in re.findall(r"\w+", query_lower) if len(t) > 3]
+        if not query_terms:
+            return 0.5
+        matched = sum(1 for t in query_terms if t in response_lower)
+        term_coverage = matched / len(query_terms)
+
+        context_terms = [t for t in re.findall(r"\w+", (context_text or "").lower())
+                         if len(t) > 5]
+        context_unique = list(dict.fromkeys(context_terms))
+        context_hits = sum(1 for t in context_unique if t in response_lower)
+        context_coverage = (context_hits / len(context_unique)) if context_unique else 0.0
+
+        relevance = 0.65 * term_coverage + 0.35 * min(1.0, context_coverage * 4.0)
+        return min(1.0, relevance)
 
     def evaluate(self, role: str, query: str, context: str,
                  response: str) -> EvaluationResult:
@@ -236,10 +268,8 @@ class SelfEvaluator:
         response_lower = (response or "").lower()
         query_lower = (query or "").lower()
 
-        # --- Stage 1: Relevance (query term coverage) ---
-        query_terms = [t for t in re.findall(r"\w+", query_lower) if len(t) > 3]
-        matched = sum(1 for t in query_terms if t in response_lower)
-        relevance = min(1.0, matched / max(len(query_terms), 1))
+        # --- Stage 1: Relevance (query term coverage + context uptake) ---
+        relevance = self._relevance_score(response_lower, query_lower, context_text)
 
         # --- Stage 2: Grounding (citations & framework attributions) ---
         grounding = self._grounding_score(response, response_lower)

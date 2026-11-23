@@ -61,7 +61,7 @@ RESPONSE QUALITY & GROUNDING STANDARDS (single pass — no regeneration):
 3. Include exactly one concise summary table and, when explaining a workflow or architecture, exactly one compact `flowchart TD` Mermaid diagram (max 7 nodes, simple IDs, quoted labels — never `stateDiagram-v2`).
 4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, clear go/no-go or action recommendations) with curated links to official documentation only.
 5. Cover every required role section, finish every table row and bullet list cleanly, and end with `## 💡 Suggested Next Steps & Follow-Up Questions` (3–4 tailored follow-up ideas) as the final section.
-6. Do NOT output any YouTube/Vimeo links or "Related Videos" lists yourself — verified official organizational videos are appended automatically by the system.
+6. Do NOT generate any video sections, YouTube links, or placeholder video lists in your response.
 7. Use clear Markdown section headings with a relevant emoji (e.g. ## 🎯 Executive Overview), well-spaced paragraphs (1–3 sentences), and bulleted/numbered lists with **bold** lead-ins throughout.
 """
 )

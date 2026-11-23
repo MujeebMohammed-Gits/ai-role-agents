@@ -8,7 +8,7 @@ mermaid.initialize({
   suppressErrorRendering: true,
   securityLevel: 'loose',
   themeVariables: { fontSize: '13px' },
-  flowchart: { nodeSpacing: 32, rankSpacing: 36, padding: 12, useMaxWidth: false },
+  flowchart: { nodeSpacing: 32, rankSpacing: 36, padding: 12, useMaxWidth: false, htmlLabels: false },
 });
 
 function escapeHtml(unsafe) {
@@ -130,10 +130,22 @@ export function renderMarkdown(text) {
     ADD_URI_ATTR: [],
   });
 
-  // Convert verified YouTube links to responsive 16:9 embed iframes after sanitization.
+  // Convert verified YouTube links to a responsive embed player paired with an
+  // always-visible clickable URL link bar, so the video stays reachable even if
+  // the embed is blocked or unplayable by browser/network policy.
   html = html.replace(
-    /<a[^>]*href="https?:\/\/(?:www\.youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})"[^>]*>.*?<\/a>/g,
-    '<div class="video-wrapper my-3"><iframe class="w-full" src="https://www.youtube-nocookie.com/embed/$1" frameborder="0" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin" height="315" style="height:315px"></iframe></div>'
+    /<a[^>]*href="https?:\/\/(?:www\.youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})"[^>]*>(.*?)<\/a>/gi,
+    (match, videoId, title) => {
+      const cleanTitle = (title || "").replace(/<[^>]*>/g, "").trim() || videoId;
+      const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}`;
+      return (
+        '<div class="video-wrapper my-3">' +
+        `<iframe class="w-full" src="${embedUrl}" frameborder="0" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin" height="315" style="height:315px"></iframe>` +
+        `<div class="video-link-bar mt-2"><a href="${watchUrl}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline">Watch Official Video on YouTube: ${escapeHtml(cleanTitle)} (${watchUrl})</a></div>` +
+        "</div>"
+      );
+    }
   );
 
   return html;

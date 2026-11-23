@@ -18,10 +18,9 @@ export async function downloadConversationPdf(agent, conversation) {
   const usableWidth = pageWidth - margin * 2;            // 180 mm
   const usableHeight = pageHeight - margin * 2;          // 267 mm
 
-  // Header/footer geometry reserved inside the printable area.
   const headerHeight = 22;
   const footerHeight = 14;
-  const contentHeight = usableHeight - headerHeight - footerHeight - 8;
+  const contentHeight = usableHeight - headerHeight - footerHeight - 8; // 223 mm
 
   const host = document.createElement("div");
   host.style.position = "fixed";
@@ -38,8 +37,7 @@ export async function downloadConversationPdf(agent, conversation) {
   wrapper.className = "pdf-export-root";
   // Off-screen export wrapper: laid out normally inside the zero-size,
   // overflow-hidden host so appending/removing it causes zero layout shift,
-  // scroll jump, or screen bump. (position: fixed would break out of the
-  // clipped host and paint at the viewport's top-left.)
+  // scroll jump, or screen bump.
   wrapper.style.width = "800px";
   wrapper.style.background = "#ffffff";
   wrapper.style.color = "#0f172a";
@@ -56,6 +54,13 @@ export async function downloadConversationPdf(agent, conversation) {
     ".pdf-export-root { font-size: 13.5px; line-height: 1.55; color: #0f172a; }",
     "table { border: 1px solid #0f172a; border-collapse: collapse; width: 100%; }",
     "th, td { border: 1px solid #0f172a; padding: 7px 10px; text-align: left; }",
+    // Uniform typography: fixed px font sizes so there is zero font-size
+    // disparity between headers, body text, and table cells across pages.
+    "h1 { font-size: 18px !important; }",
+    "h2 { font-size: 15px !important; margin-top: 16px !important; margin-bottom: 6px !important; }",
+    "h3 { font-size: 13.5px !important; }",
+    "h4 { font-size: 13px !important; }",
+    "p, li, td, th { font-size: 12px !important; line-height: 1.55 !important; }",
     "h1, h2, h3, h4 { color: #0f172a !important; border: none !important; text-decoration: none !important; margin: 10px 0 6px !important; line-height: 1.55 !important; break-inside: avoid; }",
     "p { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; }",
     "li { margin: 3px 0; line-height: 1.55 !important; break-inside: avoid; }",
@@ -64,11 +69,12 @@ export async function downloadConversationPdf(agent, conversation) {
     "pre { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; }",
     ".mermaid-viewport { width: 100% !important; overflow: visible !important; margin: 8px 0; }",
     ".mermaid-viewport svg { display: block; margin: 0 auto; }",
-    ".mermaid-rendered, .video-wrapper { break-inside: avoid; margin: 8px 0; }",
+    ".mermaid-rendered { break-inside: avoid; margin: 8px 0; }",
     ".mermaid-zoom-controls { display: none !important; }",
     ".message-block { margin-bottom: 14px; }",
     ".role-label { font-size: 9px; font-weight: bold; margin: 0 0 2px; }",
-    ".video-wrapper { border: 1px solid #0f172a; background: #f5f5f5; padding: 10px; margin: 8px 0; break-inside: avoid; }",
+    ".video-link-card { border: 1px solid #cbd5e1; background: #f1f5f9; padding: 10px 12px; margin: 8px 0; border-radius: 6px; break-inside: avoid; font-size: 12px; line-height: 1.55; }",
+    ".video-link-card a { color: #2563eb; text-decoration: underline; word-break: break-all; }",
   ];
   style.textContent = css.join("\n");
   wrapper.appendChild(style);
@@ -87,20 +93,6 @@ export async function downloadConversationPdf(agent, conversation) {
 
     const contentDiv = document.createElement("div");
     contentDiv.innerHTML = message.rendered || message.content || "";
-    contentDiv.querySelectorAll('iframe[src*="youtube.com/embed"]').forEach((iframe) => {
-      const card = document.createElement("div");
-      card.className = "video-wrapper";
-      const title = document.createElement("div");
-      title.style.fontWeight = "bold";
-      title.style.marginBottom = "4px";
-      title.textContent = "Video Reference";
-      const url = document.createElement("div");
-      url.style.fontSize = "11px";
-      url.textContent = iframe.src;
-      card.appendChild(title);
-      card.appendChild(url);
-      iframe.replaceWith(card);
-    });
     block.appendChild(contentDiv);
     wrapper.appendChild(block);
   }
@@ -111,60 +103,6 @@ export async function downloadConversationPdf(agent, conversation) {
     await renderMermaidDiagrams(wrapper);
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Scale every rendered Mermaid SVG to a readable width before capture.
-    wrapper.querySelectorAll(".mermaid-rendered svg").forEach((svg) => {
-      let vbW, vbH;
-      const viewBox = svg.getAttribute("viewBox");
-      if (viewBox) {
-        const parts = viewBox.trim().split(/\s+/);
-        vbW = parseFloat(parts[2]);
-        vbH = parseFloat(parts[3]);
-      }
-      if (!vbW || !vbH) {
-        const bb = svg.getBBox();
-        vbW = bb.width || 520;
-        vbH = bb.height || 300;
-      }
-      if (!vbW || !vbH || !isFinite(vbW) || !isFinite(vbH)) { vbW = 720; vbH = 405; }
-      const targetW = 720;
-      let targetH = Math.round(targetW * (vbH / vbW));
-      const maxHeight = 520;
-      if (targetH > maxHeight) {
-        targetH = maxHeight;
-      }
-      svg.setAttribute("width", targetW);
-      svg.setAttribute("height", targetH);
-      svg.style.width = targetW + "px";
-      svg.style.height = targetH + "px";
-      svg.style.maxWidth = "none";
-      // Size the container so the diagram occupies crisp full width in the PDF.
-      const container = svg.closest('.mermaid-rendered') || svg.parentElement;
-      if (container) {
-        container.style.width = targetW + "px";
-        container.style.height = targetH + "px";
-        container.style.maxWidth = "none";
-      }
-    });
-
-    // Break-free pagination: reserve space above any atomic block that would
-    // cross a page boundary, measured in the 800px-wide off-screen container.
-    const pageSliceCssPx = contentHeight * 800 / usableWidth;
-    const scrollY = window.scrollY || 0;
-    const leafSelector =
-      "h1, h2, h3, h4, p, li, tr, table, blockquote, pre, .mermaid-rendered, .video-wrapper";
-    wrapper.querySelectorAll(leafSelector).forEach((el) => {
-      const r = el.getBoundingClientRect();
-      const top = r.top + scrollY;
-      const bottom = r.bottom + scrollY;
-      const height = bottom - top;
-      const pageTop = Math.floor(top / pageSliceCssPx);
-      const pageBottom = Math.floor(bottom / pageSliceCssPx);
-      if (pageTop !== pageBottom && height < pageSliceCssPx * 0.85) {
-        const remaining = pageSliceCssPx - (top % pageSliceCssPx);
-        el.style.marginTop = Math.max(0, remaining) + "px";
-      }
-    });
-
     const canvas = await html2canvas(wrapper, {
       windowWidth: 800,
       backgroundColor: null,
@@ -172,11 +110,68 @@ export async function downloadConversationPdf(agent, conversation) {
       logging: false,
       useCORS: true,
       onclone: (clonedDoc) => {
-        // Neutralize Tailwind oklch() / oklab() / color-mix() computed colors so
+        // 1. Size every rendered Mermaid SVG full-size and razor-sharp using its
+        // viewBox (pure SVG labels, htmlLabels: false, so html2canvas can
+        // rasterize them instead of leaving blank boxes).
+        clonedDoc.querySelectorAll(".mermaid-rendered svg").forEach((svg) => {
+          let vbW, vbH;
+          const viewBox = svg.getAttribute("viewBox");
+          if (viewBox) {
+            const parts = viewBox.trim().split(/\s+/);
+            vbW = parseFloat(parts[2]);
+            vbH = parseFloat(parts[3]);
+          }
+          if (!vbW || !vbH) {
+            try {
+              const bb = svg.getBBox();
+              vbW = bb.width || 700;
+              vbH = bb.height || 300;
+            } catch (e) {
+              vbW = 700;
+              vbH = 405;
+            }
+          }
+          if (!vbW || !vbH || !isFinite(vbW) || !isFinite(vbH)) {
+            vbW = 700;
+            vbH = 405;
+          }
+          const targetW = 700;
+          const targetH = Math.round(targetW * (vbH / vbW));
+          svg.setAttribute("width", targetW);
+          svg.setAttribute("height", targetH);
+          svg.removeAttribute("style");
+          svg.style.width = targetW + "px";
+          svg.style.height = targetH + "px";
+          svg.style.maxWidth = "none";
+          const container = svg.closest(".mermaid-rendered") || svg.parentElement;
+          if (container) {
+            container.style.width = targetW + "px";
+            container.style.height = targetH + "px";
+            container.style.maxWidth = "none";
+          }
+        });
+
+        // 2. Replace YouTube embed iframes with compact, always-visible
+        // clickable link cards so the video stays reachable when an embed is
+        // blocked or unplayable (rather than a 315px blank box).
+        clonedDoc.querySelectorAll('.video-wrapper iframe[src*="youtube.com/embed"]').forEach((iframe) => {
+          const match = iframe.src.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+          const videoId = match ? match[1] : "";
+          const watchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : iframe.src;
+          const card = clonedDoc.createElement("div");
+          card.className = "video-link-card";
+          const link = clonedDoc.createElement("a");
+          link.href = watchUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "Watch Official Video on YouTube: " + watchUrl;
+          card.appendChild(link);
+          iframe.replaceWith(card);
+        });
+
+        // 3. Neutralize unsupported Tailwind colors (oklch/oklab/color-mix) so
         // html2canvas never throws "Attempting to parse an unsupported color
-        // function". Safe inline colors are forced on every cloned node (plus a
-        // high-priority !important sheet) so resolved colors never fall back to
-        // an unsupported function.
+        // function". Safe inline colors are forced on every cloned node.
         const SAFE = {
           color: "#0f172a",
           backgroundColor: "#ffffff",
@@ -193,8 +188,6 @@ export async function downloadConversationPdf(agent, conversation) {
         while (walker.nextNode()) {
           const el = walker.currentNode;
           const style = el.style;
-          // Force safe inline colors on every cloned node so html2canvas resolves
-          // a safe hex value regardless of what the stylesheets declare.
           for (const prop of colorProps) {
             style[prop] = SAFE[prop];
           }
@@ -243,6 +236,32 @@ export async function downloadConversationPdf(agent, conversation) {
       const sliceRenderHeight = srcH * scaleFactor;
       pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", margin, contentY, usableWidth, sliceRenderHeight);
 
+      // ---- Break-free pagination: nudge any block within 18px of a page edge
+      // onto the next page so nothing is clipped at page seams. The safe content
+      // region (starts at margin+headerHeight ~ 37mm > 58pt top safe zone, ends
+      // well above the 48pt bottom safe zone) already honors marginTop/
+      // marginBottom padding; this pass catches blocks that still hug a page
+      // boundary. ----
+      const pageSliceCssPx = contentHeight * 800 / usableWidth;
+      const scrollY = window.scrollY || 0;
+      const BOUNDARY_NUDGE_PX = 18;
+      const leafSelector =
+        "h1, h2, h3, h4, p, li, tr, blockquote, pre, .mermaid-rendered, .video-link-card";
+      wrapper.querySelectorAll(leafSelector).forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const top = r.top + scrollY;
+        const bottom = r.bottom + scrollY;
+        const height = bottom - top;
+        const pageIdx = Math.floor(top / pageSliceCssPx);
+        const pageEnd = (pageIdx + 1) * pageSliceCssPx;
+        const distToEnd = pageEnd - bottom;
+        const crosses = pageIdx !== Math.floor(bottom / pageSliceCssPx);
+        if (height < pageSliceCssPx && (crosses || (distToEnd > 0 && distToEnd < BOUNDARY_NUDGE_PX))) {
+          const remaining = pageSliceCssPx - (top % pageSliceCssPx);
+          el.style.marginTop = Math.max(0, remaining) + "px";
+        }
+      });
+
       // ---- Branded page header ----
       pdf.setFillColor(INDIGO_R, INDIGO_G, INDIGO_B);
       pdf.rect(margin, margin, usableWidth, 3, "F"); // indigo accent bar
@@ -285,26 +304,32 @@ export async function downloadConversationPdf(agent, conversation) {
   } finally {
     document.body.removeChild(host);
   }
-
 }
 
 /**
- * Draw a crisp diagonal watermark across the page.
- * Rotated 32° in light pastel indigo-slate (218, 222, 245) so foreground text
- * stays 100% readable. GState is avoided for jsPDF build compatibility.
+ * Draw a visible soft diagonal watermark across the page.
+ * Draws the "AI Role Agents" watermark rotated 32° across the centre of every
+ * page using jsPDF GState({ opacity: 0.09 }) so it is clearly visible in the
+ * background while keeping all foreground text sharp and readable. Falls back
+ * to setTextColor(228, 232, 245) when GState is unavailable.
  */
 function drawWatermark(pdf, pageWidth, pageHeight, text) {
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(40);
-  // Light pastel indigo-slate watermark. GState is avoided entirely so this works
-  // in every jsPDF build (the previous addGState({ opacity }) call passed the
-  // opacity object as the `key` argument, leaving gState undefined and throwing
-  // when addGState tried to set `gState.id`).
-  pdf.setTextColor(218, 222, 245);
-
   const cx = pageWidth / 2;
   const cy = pageHeight / 2;
-
-  // Rotate the text about the page centre for a diagonal watermark.
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(40);
+  let gstate = null;
+  try {
+    gstate = pdf.addGState({ opacity: 0.09 });
+    pdf.setGState(gstate);
+  } catch (e) {
+    pdf.setTextColor(228, 232, 245);
+  }
   pdf.text(text, cx, cy, { angle: 32, align: "center", baseline: "middle" });
+  // Restore full opacity so page content drawn afterward is not faded.
+  try {
+    pdf.setGState(pdf.addGState({ opacity: 1 }));
+  } catch (e) {
+    pdf.setTextColor(0, 0, 0);
+  }
 }
