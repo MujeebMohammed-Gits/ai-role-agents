@@ -323,7 +323,8 @@ class RAGContext:
                 return []
 
     async def retrieve(self, query: str, top_k: Optional[int] = None,
-                       emitter: Optional[TraceEmitter] = None) -> list[dict]:
+                       emitter: Optional[TraceEmitter] = None,
+                       keywords: Optional[list[str]] = None) -> list[dict]:
         import os
         if os.environ.get("QDRANT_URL"):
             if not self.enabled:

@@ -44,7 +44,7 @@ export async function downloadConversationPdf(agent, conversation) {
   // overflow-hidden host so appending/removing it causes zero layout shift,
   // scroll jump, or screen bump.
   wrapper.style.width = "800px";
-  wrapper.style.background = "#ffffff";
+  wrapper.style.background = "transparent";
   wrapper.style.color = "#0f172a";
   wrapper.style.fontFamily = "Inter, system-ui, -apple-system, sans-serif";
   wrapper.style.fontSize = "13.5px";
@@ -56,19 +56,19 @@ export async function downloadConversationPdf(agent, conversation) {
 
   const style = document.createElement("style");
   const css = [
-    ".pdf-export-root { font-size: 13.5px; line-height: 1.55; color: #0f172a; }",
+    ".pdf-export-root { font-size: 13.5px; line-height: 1.55; color: #0f172a; background: transparent !important; overflow: visible !important; }",
     "table { border: 1px solid #0f172a; border-collapse: collapse; width: 100%; }",
-    "th, td { border: 1px solid #0f172a; padding: 7px 10px; text-align: left; }",
+    "th, td { border: 1px solid #0f172a; padding: 7px 10px; text-align: left; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; line-height: 1.65 !important; }",
     // Uniform typography: fixed px font sizes so there is zero font-size
     // disparity between headers, body text, and table cells across pages.
-    "h1 { font-size: 18px !important; }",
-    "h2 { font-size: 16px !important; font-weight: 700 !important; margin: 18px 0 8px 0 !important; line-height: 1.35 !important; }",
-    "h3 { font-size: 14px !important; font-weight: 600 !important; margin: 14px 0 6px 0 !important; line-height: 1.35 !important; }",
-    "h4 { font-size: 13px !important; }",
+    "h1 { font-size: 18px !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; line-height: 1.65 !important; }",
+    "h2 { font-size: 16px !important; font-weight: 700 !important; margin: 18px 0 8px 0 !important; line-height: 1.65 !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; }",
+    "h3 { font-size: 14px !important; font-weight: 600 !important; margin: 14px 0 6px 0 !important; line-height: 1.65 !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; }",
+    "h4 { font-size: 13px !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; line-height: 1.65 !important; }",
     "p, li, td, th { font-size: 12px !important; line-height: 1.55 !important; }",
     "h1, h2, h3, h4 { color: #0f172a !important; border: none !important; text-decoration: none !important; margin: 10px 0 6px !important; line-height: 1.55 !important; break-inside: avoid; }",
-    "p { margin: 0 0 10px 0 !important; line-height: 1.6 !important; font-size: 12.5px !important; }",
-    "li { display: list-item !important; margin: 0 0 7px 0 !important; line-height: 1.55 !important; font-size: 12.5px !important; position: static !important; }",
+    "p { margin: 0 0 10px 0 !important; line-height: 1.65 !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; font-size: 12.5px !important; }",
+    "li { display: list-item !important; margin: 0 0 7px 0 !important; line-height: 1.65 !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; font-size: 12.5px !important; position: static !important; }",
     "ul, ol { margin: 6px 0 12px 22px !important; padding: 0 !important; }",
     "blockquote { border-left: 3px solid #0f172a; padding-left: 10px; margin: 8px 0; break-inside: avoid; }",
     "pre { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; }",
@@ -185,7 +185,7 @@ export async function downloadConversationPdf(agent, conversation) {
         // function". Safe inline colors are forced on every cloned node.
         const SAFE = {
           color: "#0f172a",
-          backgroundColor: "#ffffff",
+          backgroundColor: "transparent",
           borderColor: "#cbd5e1",
           borderTopColor: "#cbd5e1",
           borderRightColor: "#cbd5e1",
@@ -218,7 +218,9 @@ export async function downloadConversationPdf(agent, conversation) {
         // Safety-net !important override stylesheet on the cloned document.
         const override = clonedDoc.createElement("style");
         override.textContent =
-          "* { color: #0f172a !important; background-color: #ffffff !important; border-color: #cbd5e1 !important; }";
+          "* { color: #0f172a !important; border-color: #cbd5e1 !important; }" +
+          ".pdf-export-root { background: transparent !important; }" +
+          "table th, td { background-color: #ffffff !important; }";
         clonedDoc.head.appendChild(override);
       },
     });
@@ -376,8 +378,8 @@ function drawWatermark(pdf, pageWidth, pageHeight, text) {
   const cx = pageWidth / 2;
   const cy = pageHeight / 2;
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(56);
-  pdf.setTextColor(214, 219, 238);
+  pdf.setFontSize(58);
+  pdf.setTextColor(216, 221, 240);
   pdf.text(text, cx, cy, { angle: 32, align: "center", baseline: "middle" });
   // Restore full-contrast color so page content drawn afterward is sharp.
   pdf.setTextColor(0, 0, 0);

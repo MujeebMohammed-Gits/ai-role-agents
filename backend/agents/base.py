@@ -56,13 +56,14 @@ QUALITY_DIRECTIVE = (
     """
 
 RESPONSE QUALITY & GROUNDING STANDARDS (single pass — no regeneration):
-1. Produce ONE comprehensive, concise, well-structured answer (~750–1,000 words total) that finishes 100% cleanly. Never truncate mid-sentence, mid-table, or mid-fence. Stay within max_tokens=6144.
-2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N]. Never fabricate URLs.
-3. Include exactly one concise summary table and, when explaining a workflow or architecture, exactly one compact `flowchart TD` Mermaid diagram (max 7 nodes, simple IDs, quoted labels — never `stateDiagram-v2`).
-4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, clear go/no-go or action recommendations) with curated links to official documentation only.
-5. Cover every required role section, finish every table row and bullet list cleanly, and end with `## 💡 Suggested Next Steps & Follow-Up Questions` (3–4 tailored follow-up ideas) as the final section.
-6. Do NOT generate any video sections, YouTube links, or placeholder video lists in your response.
-7. Use clear Markdown section headings with a relevant emoji (e.g. ## 🎯 Executive Overview), well-spaced paragraphs (1–3 sentences), and bulleted/numbered lists with **bold** lead-ins throughout.
+1. Produce ONE comprehensive, well-structured answer that finishes 100% cleanly. Never truncate mid-sentence, mid-table, or mid-fence. Stay within max_tokens=6144.
+2. Open with the required role headings, each marked with a relevant emoji icon, and cover every domain keyword from the user's query directly and concretely.
+3. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N], plus framework attributions (Scrum Guide, LeSS, Team Topologies, SAFe, Kanban, DORA, NIST, PMI, BABOK). Never fabricate URLs.
+4. Deliver dual bulleted insights AND numbered execution steps throughout — every recommendation gets both a bullet and a step.
+5. Include exactly one compact `flowchart TD` Mermaid diagram (max 7 nodes, simple IDs, quoted labels — never `stateDiagram-v2`) when explaining a workflow or architecture.
+6. Include exactly one concise Markdown summary table (max 5 rows).
+7. End with `## 💡 Suggested Next Steps & Follow-Up Questions` (3–4 tailored follow-up ideas) as the final section.
+8. Do NOT generate any video sections, YouTube links, or placeholder video lists in your response.
 """
 )
 
@@ -73,6 +74,36 @@ def _ensure_heading_blank_line(response: str) -> str:
     """Ensure every Markdown heading (## / ###) is preceded by a blank line
     so renderers never show raw ``## `` hashes as plain text."""
     return re.sub(r"\n+(?=#{2,}\s)", "\n\n", response)
+
+# Conversational filler stripped before extracting domain keywords.
+_KEYWORD_STOPWORDS: set[str] = {
+    "about", "start", "give", "fully", "detailed", "plan", "how", "get",
+    "started", "clear", "related", "where", "applicable", "with", "and",
+    "for", "the", "to", "in", "a", "an", "of",
+    "i", "im", "me", "my", "please", "can", "could", "would", "should",
+    "what", "when", "which", "who", "whom", "is", "are", "was", "were",
+    "be", "been", "being", "have", "has", "had", "do", "does", "did",
+    "will", "just", "also", "even", "still", "already", "yet",
+}
+
+
+def _extract_domain_keywords(query: str) -> list[str]:
+    """Extract substantive domain keywords from the user's query.
+
+    Conversational filler (``"give me"``, ``"how to get started"``,
+    ``"where applicable"`` and the like) is stripped so only meaningful
+    domain terms remain. These keywords drive RAG / web retrieval and
+    self-evaluation so every agent grounds its answer in the most relevant
+    Qdrant, OpenAlex Journal and Organizational Article sources.
+    """
+    tokens = re.findall(r"\w+", (query or "").lower())
+    keywords: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if len(token) > 3 and token not in _KEYWORD_STOPWORDS and token not in seen:
+            seen.add(token)
+            keywords.append(token)
+    return keywords
 
 
 class BaseAgent:
@@ -225,14 +256,28 @@ class BaseAgent:
         emit_log("info", "Received query", {"query_length": len(query)})
         self.memory.append(session_id, "user", query)
 
+        # Phase 0: Query keyword analysis — extract the substantive domain
+        # keywords from the user's query (stripping conversational filler)
+        # so every retrieval and evaluation step is grounded in the right
+        # domain terms.
+        keywords = _extract_domain_keywords(query)
+        if trace:
+            await trace_record("trace.agent.thought", "agent_thought",
+                               "keyword_analysis",
+                               data={"keywords": keywords, "role": self.role,
+                                     "query": query})
+
         # Phase 1: RAG Context Fetch.
-        emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
+        emit_log("info", "Retrieving context via RAG",
+                 {"top_k": settings.rag_top_k, "keywords": keywords})
         top_k = 6
         try:
             rag_res, web_res = await asyncio.wait_for(
                 asyncio.gather(
-                    self.rag.retrieve(query, top_k=top_k, emitter=trace),
-                    search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace),
+                    self.rag.retrieve(query, top_k=top_k, emitter=trace,
+                                      keywords=keywords),
+                    search_web_sources(f"{self.name} {query}", max_results=4,
+                                       emitter=trace, keywords=keywords),
                     return_exceptions=True,
                 ),
                 timeout=3.5,
@@ -251,7 +296,7 @@ class BaseAgent:
             })
         emit_log("info", f"Retrieved {len(context)} grounded context sources (RAG + Web)", {"count": len(context), "web_count": len(web_hits)})
         # Pre-generation context evaluation: rank & filter before building context_text.
-        context, ctx_eval = self.evaluator.filter_and_rank_context(query, context)
+        context, ctx_eval = self.evaluator.filter_and_rank_context(query, context, keywords=keywords)
         emit_log("info", "Context evaluation complete", ctx_eval)
         if trace:
             await trace.emit("trace.rag.retrieve", "rag", "retrieve",
@@ -326,8 +371,10 @@ class BaseAgent:
             if response.count("```") % 2 != 0:
                 response += "\n```"
             instruction = (
-                "Output ONLY the missing section(s) or citations listed below, "
-                "in <= 220 words, without repeating any already-written section:\n"
+                "Directly enrich ONLY the missing section(s), citations, or "
+                "diagram listed below, in the agent's own authoritative voice, "
+                "in <= 220 words, without repeating any earlier heading or "
+                "already-written section:\n"
                 + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
             )
             refinement_messages = [
@@ -474,15 +521,29 @@ class BaseAgent:
             asyncio.create_task(self._emit("agent.log", entry))
             return entry
 
+        # Phase 0: Query keyword analysis — extract the substantive domain
+        # keywords from the user's query (stripping conversational filler)
+        # so every retrieval and evaluation step is grounded in the right
+        # domain terms.
+        keywords = _extract_domain_keywords(query)
+        if trace:
+            await trace_record("trace.agent.thought", "agent_thought",
+                               "keyword_analysis",
+                               data={"keywords": keywords, "role": self.role,
+                                     "query": query})
+
         # Phase 1: RAG Context Fetch.
         yield {"event": "phase", "data": {"phase": "rag_retrieve", "status": "start"}}
-        emit_log("info", "Retrieving context via RAG", {"top_k": settings.rag_top_k})
+        emit_log("info", "Retrieving context via RAG",
+                 {"top_k": settings.rag_top_k, "keywords": keywords})
         top_k = 6
         try:
             rag_res, web_res = await asyncio.wait_for(
                 asyncio.gather(
-                    self.rag.retrieve(query, top_k=top_k, emitter=trace),
-                    search_web_sources(f"{self.name} {query}", max_results=4, emitter=trace),
+                    self.rag.retrieve(query, top_k=top_k, emitter=trace,
+                                      keywords=keywords),
+                    search_web_sources(f"{self.name} {query}", max_results=4,
+                                       emitter=trace, keywords=keywords),
                     return_exceptions=True,
                 ),
                 timeout=3.5,
@@ -501,7 +562,7 @@ class BaseAgent:
             })
         emit_log("info", f"Retrieved {len(context)} grounded context sources (RAG + Web)", {"count": len(context), "web_count": len(web_hits)})
         # Pre-generation context evaluation: rank & filter before building context_text.
-        context, ctx_eval = self.evaluator.filter_and_rank_context(query, context)
+        context, ctx_eval = self.evaluator.filter_and_rank_context(query, context, keywords=keywords)
         emit_log("info", "Context evaluation complete", ctx_eval)
         if trace:
             await trace.emit("trace.rag.retrieve", "rag", "retrieve",
@@ -601,8 +662,10 @@ class BaseAgent:
                 if response.count("```") % 2 != 0:
                     response += "\n```"
                 instruction = (
-                    "Output ONLY the missing section(s) or citations listed below, "
-                    "in <= 220 words, without repeating any already-written section:\n"
+                    "Directly enrich ONLY the missing section(s), citations, "
+                    "or diagram listed below, in the agent's own authoritative "
+                    "voice, in <= 220 words, without repeating any earlier "
+                    "heading or already-written section:\n"
                     + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
                 )
                 refinement_messages = [

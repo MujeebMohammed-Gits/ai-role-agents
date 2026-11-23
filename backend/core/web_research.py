@@ -365,6 +365,7 @@ async def search_web_sources(
     query: str,
     max_results: int = 4,
     emitter: Optional[TraceEmitter] = None,
+    keywords: Optional[list[str]] = None,
 ) -> list[dict]:
     """Fetch authentic live web results from OpenAlex, DuckDuckGo, and YouTube.
 
