@@ -62,7 +62,7 @@ RESPONSE QUALITY & GROUNDING STANDARDS (single pass — no regeneration):
 4. Deliver dual bulleted insights AND numbered execution steps throughout — every recommendation gets both a bullet and a step.
 5. Include exactly one compact `flowchart TD` Mermaid diagram (max 7 nodes, simple IDs, quoted labels — never `stateDiagram-v2`) when explaining a workflow or architecture.
 6. Include exactly one concise Markdown summary table (max 5 rows).
-7. End with `## 💡 Suggested Next Steps & Follow-Up Questions` (3–4 tailored follow-up ideas) as the final section.
+7. End with `## 💡 Suggested Next Steps & Follow-Up Questions` (3–4 short bulleted next-step actions or questions for the user — questions only, never self-answered by the agent) as the final section.
 8. Do NOT generate any video sections, YouTube links, or placeholder video lists in your response.
 """
 )
@@ -367,7 +367,7 @@ class BaseAgent:
         # below the Eval 88 threshold. Appends only the missing delta (missing
         # sections / citations) without repeating any section already written,
         # then re-scores so the final response reaches Eval 88+.
-        if self.evaluator.should_revise(evaluation) and loop < 1:
+        if evaluation.suggestions and self.evaluator.should_revise(evaluation) and loop < 1:
             if response.count("```") % 2 != 0:
                 response += "\n```"
             instruction = (
@@ -658,7 +658,7 @@ class BaseAgent:
             # below the Eval 88 threshold. Appends only the missing delta (missing
             # sections / citations) without repeating any section already written,
             # then re-scores so the final response reaches Eval 88+.
-            if self.evaluator.should_revise(evaluation) and loop < 1:
+            if evaluation.suggestions and self.evaluator.should_revise(evaluation) and loop < 1:
                 if response.count("```") % 2 != 0:
                     response += "\n```"
                 instruction = (

@@ -27,15 +27,15 @@ export async function downloadConversationPdf(agent, conversation) {
   const prevChatScroll = chatEl ? chatEl.scrollTop : 0;
 
   const host = document.createElement("div");
+  host.style.contain = "strict";
   host.style.position = "fixed";
-  host.style.left = "-9999px";
   host.style.top = "0";
-  host.style.width = "800px";
-  host.style.height = "auto";
-  host.style.overflow = "visible";
+  host.style.left = "0";
+  host.style.width = "0";
+  host.style.height = "0";
+  host.style.overflow = "hidden";
   host.style.pointerEvents = "none";
-  host.style.opacity = "0";
-  host.style.zIndex = "-9999";
+  host.style.zIndex = "-1";
   document.body.appendChild(host);
 
   const wrapper = document.createElement("div");
@@ -44,6 +44,9 @@ export async function downloadConversationPdf(agent, conversation) {
   // overflow-hidden host so appending/removing it causes zero layout shift,
   // scroll jump, or screen bump.
   wrapper.style.width = "800px";
+  wrapper.style.position = "absolute";
+  wrapper.style.left = "-10000px";
+  wrapper.style.top = "0";
   wrapper.style.background = "transparent";
   wrapper.style.color = "#0f172a";
   wrapper.style.fontFamily = "Inter, system-ui, -apple-system, sans-serif";
@@ -146,18 +149,19 @@ export async function downloadConversationPdf(agent, conversation) {
             vbW = 700;
             vbH = 405;
           }
-          const targetW = 700;
-          const targetH = Math.round(targetW * (vbH / vbW));
-          svg.setAttribute("width", targetW);
-          svg.setAttribute("height", targetH);
+          const fitScale = Math.min(680 / vbW, 500 / vbH);
+          const fitW = Math.round(vbW * fitScale);
+          const fitH = Math.round(vbH * fitScale);
+          svg.setAttribute("width", fitW);
+          svg.setAttribute("height", fitH);
           svg.removeAttribute("style");
-          svg.style.width = targetW + "px";
-          svg.style.height = targetH + "px";
+          svg.style.width = fitW + "px";
+          svg.style.height = fitH + "px";
           svg.style.maxWidth = "none";
           const container = svg.closest(".mermaid-rendered") || svg.parentElement;
           if (container) {
-            container.style.width = targetW + "px";
-            container.style.height = targetH + "px";
+            container.style.width = fitW + "px";
+            container.style.height = fitH + "px";
             container.style.maxWidth = "none";
           }
         });
@@ -225,13 +229,8 @@ export async function downloadConversationPdf(agent, conversation) {
       },
     });
 
-        window.scrollTo(0, prevScrollY);
-    if (chatEl) {
-      chatEl.scrollTop = prevChatScroll;
-    }
-
     const scaleFactor = usableWidth / canvas.width; // mm per canvas px
-    const pageSlicePx = Math.floor(contentHeight / scaleFactor); // canvas px per content page
+    const effectiveSlicePx = Math.floor(contentHeight / scaleFactor) - 24; // canvas px per content page, 24px bottom safety margin
 
     let sliceTop = 0;
     let pageCount = 0;
@@ -240,12 +239,17 @@ export async function downloadConversationPdf(agent, conversation) {
       pageCount += 1;
       const pageNum = pageCount;
 
-      const srcH = Math.min(pageSlicePx, canvas.height - sliceTop);
+      const srcH = Math.min(effectiveSlicePx, canvas.height - sliceTop);
       const sliceCanvas = document.createElement("canvas");
       sliceCanvas.width = canvas.width;
       sliceCanvas.height = srcH;
       const ctx = sliceCanvas.getContext("2d");
       ctx.drawImage(canvas, 0, sliceTop, canvas.width, srcH, 0, 0, canvas.width, srcH);
+
+      // Drop near-empty trailing slices so an orphan page with a single clipped line is never generated.
+      if (!hasMeaningfulContent(sliceCanvas, 35)) {
+        break;
+      }
 
       // ---- Diagonal background watermark (drawn first, behind content) ----
       drawWatermark(pdf, pageWidth, pageHeight, WATERMARK_TEXT);
@@ -312,7 +316,7 @@ export async function downloadConversationPdf(agent, conversation) {
       const builtByWidth = pdf.getStringUnitWidth(FOOTER_TEXT) * 8 / pdf.internal.scaleFactor;
       pdf.text(FOOTER_TEXT, pageWidth - margin - builtByWidth, pageHeight - margin + 6);
 
-      sliceTop += pageSlicePx;
+      sliceTop += effectiveSlicePx;
     }
 
     const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, "_").toLowerCase();
@@ -363,6 +367,10 @@ export async function downloadConversationPdf(agent, conversation) {
       }
     }
   } finally {
+    window.scrollTo(0, prevScrollY);
+    if (chatEl) {
+      chatEl.scrollTop = prevChatScroll;
+    }
     document.body.removeChild(host);
   }
 }
@@ -383,4 +391,34 @@ function drawWatermark(pdf, pageWidth, pageHeight, text) {
   pdf.text(text, cx, cy, { angle: 32, align: "center", baseline: "middle" });
   // Restore full-contrast color so page content drawn afterward is sharp.
   pdf.setTextColor(0, 0, 0);
+}
+
+/**
+ * Returns true when the canvas slice contains at least `minHeightPx` vertical
+ * pixels of non-white (non-blank) content. Used to drop trailing near-empty
+ * slices so orphan pages are never emitted.
+ */
+function hasMeaningfulContent(canvas, minHeightPx) {
+  const ctx = canvas.getContext("2d");
+  const { width, height } = canvas;
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  let firstRow = -1;
+  let lastRow = -1;
+  for (let y = 0; y < height; y++) {
+    let rowHasContent = false;
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) {
+        rowHasContent = true;
+        break;
+      }
+    }
+    if (rowHasContent) {
+      if (firstRow === -1) firstRow = y;
+      lastRow = y;
+    }
+  }
+  if (firstRow === -1) return false;
+  return (lastRow - firstRow + 1) >= minHeightPx;
 }

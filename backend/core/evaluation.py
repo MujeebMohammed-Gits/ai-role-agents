@@ -350,7 +350,7 @@ class SelfEvaluator:
             "formatting": 0.15,
             "role_compliance": 0.25,
         }
-        score = round(sum(stage_scores[k] * w for k, w in weights.items()), 3)
+        score = round(min(0.96, sum(stage_scores[k] * w for k, w in weights.items())), 3)
 
         passed = score >= self.threshold
         needs_revision = score < self.threshold

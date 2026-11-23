@@ -428,4 +428,5 @@
 }
 
 /* Prevent layout jump when Mermaid diagrams and Eval badges mount */
+html, body, #root, main, [data-chat-thread="true"] { overflow-anchor: none !important; }
 .chat-scroll, [class*='overflow-y-auto'] { overflow-anchor: none; scroll-behavior: smooth; }
