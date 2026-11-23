@@ -202,9 +202,37 @@ class SelfEvaluator:
 
     # ------------------------------------------------------------------ grading
 
+    def _section_present(self, section_name: str, response_lower: str) -> bool:
+        """Case-insensitive, emoji-tolerant check that a required section appears.
+
+        A section such as ``Coaching Questions`` matches headings like
+        ``## 🔍 Observation`` / ``## Coaching Questions`` because the whole
+        response is lower-cased before the keyword substring test.
+        """
+        keywords = [w for w in re.findall(r"\w+", section_name.lower()) if len(w) > 3]
+        return any(w in response_lower for w in keywords)
+
+    def _grounding_score(self, response: str, response_lower: str) -> float:
+        """Score grounding by the citation forms the agent is expected to emit.
+
+        Recognizes ``[Reference #N]``, Markdown URL citations
+        ``[Title](URL)`` and known framework attributions (Scrum Guide, Team
+        Topologies, DORA, OKRs, RICE, MoSCoW).
+        """
+        score = 0.0
+        if re.search(r"\[Reference\s*#\d+\]", response):
+            score += 0.5
+        if re.search(r"\[[^\]]+\]\(https?://[^)]+\)", response):
+            score += 0.5
+        frameworks = ("scrum guide", "team topologies", "dora", "okr", "rice", "moscow")
+        if any(fw in response_lower for fw in frameworks):
+            score += 0.2
+        return min(1.0, score)
+
     def evaluate(self, role: str, query: str, context: str,
                  response: str) -> EvaluationResult:
         criteria = self.criteria_for(role)
+        required_sections = self.required_sections_for(role)
         response_lower = (response or "").lower()
         query_lower = (query or "").lower()
 
@@ -213,13 +241,8 @@ class SelfEvaluator:
         matched = sum(1 for t in query_terms if t in response_lower)
         relevance = min(1.0, matched / max(len(query_terms), 1))
 
-        # --- Stage 2: Criterion coverage (role-specific) ---
-        covered = 0
-        for criterion in criteria:
-            key_words = [w for w in re.findall(r"\w+", criterion) if len(w) > 4]
-            if any(w in response_lower for w in key_words):
-                covered += 1
-        coverage = covered / max(len(criteria), 1)
+        # --- Stage 2: Grounding (citations & framework attributions) ---
+        grounding = self._grounding_score(response, response_lower)
 
         # --- Stage 3: Completeness (length + structure) ---
         length_score = min(1.0, len(response or "") / 400.0)
@@ -231,43 +254,28 @@ class SelfEvaluator:
         has_numbered = bool(re.search(r"^\s*\d+\.\s", response or "", re.MULTILINE))
         formatting = 0.5 * (1.0 if has_bullets else 0.0) + 0.5 * (1.0 if has_numbered else 0.0)
 
-        # --- Stage 5: Constraint compliance (sections present) ---
-        required_sections = {
-            "delivery_management": ["delivery objective", "risks & blockers", "proposed timeline"],
-            "enterprise_agile_coach": ["observation", "agile principle", "coaching questions"],
-            "scrum_master": ["current sprint state", "impediment log", "scrum event guidance"],
-            "product_manager": ["customer problem", "prioritization rationale", "success metrics"],
-            "product_owner": ["backlog items", "acceptance criteria", "definition of ready"],
-            "business_analyst": ["requirements elicited", "as-is process", "to-be process"],
-            "user_research": ["research question", "recommended method", "ethics"],
-            "devops_engineer": ["pipeline stages", "deployment strategy", "rollback"],
-            "sre": ["slo", "error budget", "incident", "postmortem"],
-            "platform_engineering": ["golden path", "self-service", "guardrails"],
-            "programme_manager": ["cross-project dependency", "program risks", "benefit"],
-            "management_consultant": ["problem frame", "issue tree", "implementation roadmap"],
-        }[role]
-        sections_found = 0
-        for section in required_sections:
-            section_keywords = [w for w in re.findall(r"\w+", section) if len(w) > 3]
-            if any(w in response_lower for w in section_keywords):
-                sections_found += 1
-        constraint_compliance = sections_found / max(len(required_sections), 1)
+        # --- Stage 5: Role compliance (required sections, case-insensitive, emoji-aware) ---
+        sections_found = sum(
+            1 for section in required_sections
+            if self._section_present(section, response_lower)
+        )
+        role_compliance = sections_found / max(len(required_sections), 1)
 
         stage_scores = {
             "relevance": round(relevance, 3),
-            "criterion_coverage": round(coverage, 3),
+            "grounding": round(grounding, 3),
             "completeness": round(completeness, 3),
             "formatting": round(formatting, 3),
-            "constraint_compliance": round(constraint_compliance, 3),
+            "role_compliance": round(role_compliance, 3),
         }
 
         # Weighted overall score.
         weights = {
             "relevance": 0.20,
-            "criterion_coverage": 0.25,
+            "grounding": 0.25,
             "completeness": 0.15,
             "formatting": 0.15,
-            "constraint_compliance": 0.25,
+            "role_compliance": 0.25,
         }
         score = round(sum(stage_scores[k] * w for k, w in weights.items()), 3)
 
@@ -277,21 +285,24 @@ class SelfEvaluator:
         suggestions: list[str] = []
         if relevance < 0.4:
             suggestions.append("Address the specific terms of the user's query more directly.")
-        if coverage < 0.6:
-            suggestions.append(f"Cover more of the role criteria: {', '.join(criteria[:3])}.")
-        if completeness < 0.5:
-            suggestions.append("Expand the response with more structured detail.")
-        if formatting < 0.5:
-            suggestions.append("Use bulleted or numbered lists to structure the answer.")
-        if constraint_compliance < 0.6:
-            suggestions.append(f"Include the expected sections: {', '.join(required_sections[:3])}.")
+        for section in required_sections:
+            if not self._section_present(section, response_lower):
+                suggestions.append(f"Missing required section: {section}")
+        if not has_numbered:
+            suggestions.append("Add numbered action steps")
+        if not has_bullets:
+            suggestions.append("Add bulleted insights")
+        has_ref = bool(re.search(r"\[Reference\s*#\d+\]", response))
+        has_md_cite = bool(re.search(r"\[[^\]]+\]\(https?://[^)]+\)", response))
+        if not has_ref and not has_md_cite:
+            suggestions.append("Include inline source citations")
 
         feedback = (
-            f"Scored {score:.2f} against {len(criteria)} role criteria "
+            f"Scored {score:.2f} against {len(required_sections)} required sections "
             f"(threshold {self.threshold:.2f}). "
-            f"Relevance {relevance:.0%}, coverage {coverage:.0%}, "
+            f"Relevance {relevance:.0%}, grounding {grounding:.0%}, "
             f"completeness {completeness:.0%}, formatting {formatting:.0%}, "
-            f"constraint compliance {constraint_compliance:.0%}."
+            f"role compliance {role_compliance:.0%}."
         )
 
         return EvaluationResult(

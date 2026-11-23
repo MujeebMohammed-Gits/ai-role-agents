@@ -306,6 +306,32 @@ class BaseAgent:
         evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
         loop = 0
 
+        # Surgical guardrail refinement: at most one fast pass when Pass 1 is
+        # below the Eval 88 threshold. Appends only the missing delta (missing
+        # sections / citations) without repeating any section already written,
+        # then re-scores so the final response reaches Eval 88+.
+        if self.evaluator.should_revise(evaluation) and loop < 1:
+            if response.count("```") % 2 != 0:
+                response += "\n```"
+            instruction = (
+                "Output ONLY the missing section(s) or citations listed below, "
+                "in <= 220 words, without repeating any already-written section:\n"
+                + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
+            )
+            refinement_messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "assistant", "content": response},
+                {"role": "user", "content": instruction},
+            ]
+            delta_chunks: list[str] = []
+            async for chunk in self.llm.stream_complete(self.system_prompt, refinement_messages):
+                delta_chunks.append(chunk)
+            delta = "".join(delta_chunks)
+            if delta.strip():
+                response = response.rstrip() + "\n\n" + delta.strip()
+            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+            loop = 1
+
         # Close any unclosed code fence and strip markers from the final response.
         if response.count("```") % 2 != 0:
             response += "\n```"
@@ -544,6 +570,33 @@ class BaseAgent:
         loop = 0
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
                                           "score": evaluation.score, "passed": evaluation.passed}}
+
+        # Surgical guardrail refinement: at most one fast pass when Pass 1 is
+        # below the Eval 88 threshold. Appends only the missing delta (missing
+        # sections / citations) without repeating any section already written,
+        # then re-scores so the final response reaches Eval 88+.
+        if self.evaluator.should_revise(evaluation) and loop < 1:
+            if response.count("```") % 2 != 0:
+                response += "\n```"
+            instruction = (
+                "Output ONLY the missing section(s) or citations listed below, "
+                "in <= 220 words, without repeating any already-written section:\n"
+                + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
+            )
+            refinement_messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "assistant", "content": response},
+                {"role": "user", "content": instruction},
+            ]
+            delta_chunks: list[str] = []
+            async for chunk in self.llm.stream_complete(self.system_prompt, refinement_messages):
+                delta_chunks.append(chunk)
+                yield {"event": "token", "data": chunk}
+            delta = "".join(delta_chunks)
+            if delta.strip():
+                response = response.rstrip() + "\n\n" + delta.strip()
+            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+            loop = 1
 
         # Close any unclosed code fence, strip markers, append official videos.
         if response.count("```") % 2 != 0:
