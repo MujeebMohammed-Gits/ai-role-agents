@@ -35,6 +35,8 @@ def _env_float(name: str, default: float) -> float:
 
 _NVIDIA_NIM_CANONICAL_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
+_DEFAULT_FALLBACK_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
+
 
 def _normalize_nvidia_base_url(base_url: str) -> str:
     """Normalize a NVIDIA NIM base URL to the canonical integrate API endpoint.

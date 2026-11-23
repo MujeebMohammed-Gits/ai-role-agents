@@ -17,7 +17,11 @@ from collections.abc import AsyncIterator
 
 logger = logging.getLogger("core.llm_client")
 
-from config.settings import _NVIDIA_NIM_CANONICAL_BASE_URL, _normalize_nvidia_base_url
+from config.settings import (
+    _DEFAULT_FALLBACK_MODEL,
+    _NVIDIA_NIM_CANONICAL_BASE_URL,
+    _normalize_nvidia_base_url,
+)
 
 
 class LLMClient:
@@ -100,19 +104,76 @@ def build_client(provider: str, model: str, **kwargs) -> LLMClient:
     )
 
 
-_FALLBACK_MODEL = "meta/llama-3.3-70b-instruct"
-
-
 class _OpenAILLMClient(LLMClient):
     def __init__(self, client: object, model: str) -> None:
         self._client = client
         self._model = model
 
-    def _is_retriable_nvidia_error(self, exc) -> bool:
-        """True if ``exc`` is a retriable NVIDIA NIM error (HTTP 400 or 404).
+    #: Cache of a live NVIDIA NIM chat model discovered via ``models.list()``.
+    #: Shared across instances so a single discovery serves the whole mesh.
+    _discovered_active_model: Optional[str] = None
 
-        Only NVIDIA NIM 400/404s are retried with the fallback model; any other
-        provider's error is still surfaced to the caller.
+    async def _discover_live_model(self) -> Optional[str]:
+        """Query NVIDIA NIM ``models.list()`` and return the best live chat model id.
+
+        Returns a cached model id once discovered, or ``None`` when discovery is
+        not applicable (non-NVIDIA base URL) or the endpoint is unreachable.
+        Only non-embedding / non-guard / non-rerank models are eligible.
+        """
+        base_url = str(getattr(self._client, "base_url", ""))
+        if "integrate.api.nvidia.com" not in base_url:
+            return None
+        if _OpenAILLMClient._discovered_active_model is not None:
+            return _OpenAILLMClient._discovered_active_model
+        try:
+            listed = await self._client.models.list()
+        except Exception as exc:  # discovery is best-effort; fall back below
+            logger.warning("NVIDIA NIM models.list() discovery failed: %s", exc)
+            return None
+        models_data = getattr(listed, "data", listed)
+        if isinstance(models_data, dict):
+            models_data = models_data.get("data", [])
+        ids: list[str] = []
+        for entry in models_data:
+            if isinstance(entry, dict):
+                mid = entry.get("id")
+            else:
+                mid = getattr(entry, "id", None)
+            if mid:
+                ids.append(str(mid))
+
+        preferred = [
+            "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "nvidia/nemotron-3.5-lightning-30b-a3b",
+            "meta/llama-3.1-70b-instruct",
+            "qwen/qwen2.5-72b-instruct",
+        ]
+
+        def _is_chat_model(model_id: str) -> bool:
+            low = model_id.lower()
+            return not any(
+                token in low for token in ("embedding", "guard", "rerank", "moderation")
+            )
+
+        chat_models = [mid for mid in ids if _is_chat_model(mid)]
+        chosen: Optional[str] = None
+        for preferred_id in preferred:
+            if preferred_id in chat_models:
+                chosen = preferred_id
+                break
+        if chosen is None and chat_models:
+            chosen = chat_models[0]
+        if chosen is not None:
+            _OpenAILLMClient._discovered_active_model = chosen
+            logger.info("Discovered live NVIDIA NIM chat model: %s", chosen)
+        return chosen
+
+    def _is_retriable_nvidia_error(self, exc) -> bool:
+        """True if ``exc`` is a retriable NVIDIA NIM error (HTTP 400, 404 or 410).
+
+        A 410 (Gone) means the model slug is retired/deprecated. Only NVIDIA NIM
+        400/404/410s are retried with a live model; any other provider's error is
+        still surfaced to the caller.
         """
         if "integrate.api.nvidia.com" not in str(getattr(self._client, "base_url", "")):
             return False
@@ -122,36 +183,63 @@ class _OpenAILLMClient(LLMClient):
             status = getattr(response, "status_code", None) if response is not None else None
         if status is not None:
             try:
-                return int(status) in (400, 404)
+                return int(status) in (400, 404, 410)
             except (TypeError, ValueError):
                 return False
         text = str(exc).lower()
-        return ("400" in text or "404" in text) and (
-            "not found" in text or "notfound" in text or "bad request" in text
+        return any(code in text for code in ("410", "400", "404")) and (
+            "gone" in text
+            or "not found" in text
+            or "notfound" in text
+            or "bad request" in text
+            or "deprecated" in text
         )
 
     async def _create_with_fallback(self, model: str, chat: list[dict], max_tokens: int, stream: bool = False):
-        """Create a chat completion, retrying once with the fallback model on NVIDIA NIM 400/404."""
-        try:
-            return await self._client.chat.completions.create(
-                model=model,
-                messages=chat,
-                max_tokens=max_tokens,
-                stream=stream,
-            )
-        except Exception as exc:
-            cause = getattr(exc, "__cause__", None) or exc
-            if model != _FALLBACK_MODEL and self._is_retriable_nvidia_error(cause):
+        """Create a chat completion with live-model discovery fallback on NVIDIA NIM 410/404/400.
+
+        Attempts (in order): the requested ``model``, then a live model discovered
+        via ``models.list()`` (cached in memory), then the default fallback model.
+        Only NVIDIA NIM 400/404/410 errors trigger a retry; every other error is
+        surfaced to the caller unchanged.
+        """
+        tried: list[str] = [model]
+        candidate = model
+        for _attempt in range(3):
+            try:
                 return await self._client.chat.completions.create(
-                    model=_FALLBACK_MODEL,
+                    model=candidate,
                     messages=chat,
                     max_tokens=max_tokens,
                     stream=stream,
                 )
-            raise RuntimeError(
-                f"LLM API failed ({self._client.base_url} | model={model}): "
-                f"{type(cause).__name__}: {cause}"
-            ) from exc
+            except Exception as exc:
+                cause = getattr(exc, "__cause__", None) or exc
+                if not self._is_retriable_nvidia_error(cause):
+                    raise RuntimeError(
+                        f"LLM API failed ({self._client.base_url} | model={candidate}): "
+                        f"{type(cause).__name__}: {cause}"
+                    ) from exc
+                # A NVIDIA NIM model is retired/deprecated: discover a live
+                # replacement and retry with it (cached so discovery runs once).
+                discovered = await self._discover_live_model()
+                next_candidate: Optional[str] = None
+                if discovered is not None and discovered not in tried:
+                    next_candidate = discovered
+                elif _DEFAULT_FALLBACK_MODEL not in tried:
+                    next_candidate = _DEFAULT_FALLBACK_MODEL
+                if next_candidate is None:
+                    raise RuntimeError(
+                        f"LLM API failed ({self._client.base_url} | model={candidate}): "
+                        f"{type(cause).__name__}: {cause} "
+                        f"(no live fallback model available; tried {tried})"
+                    ) from exc
+                tried.append(next_candidate)
+                candidate = next_candidate
+        raise RuntimeError(
+            f"LLM API failed ({self._client.base_url} | model={candidate}): "
+            f"exhausted NVIDIA NIM fallback models {tried}"
+        )
 
     async def complete(
         self,
@@ -163,7 +251,6 @@ class _OpenAILLMClient(LLMClient):
         chat = [{"role": "system", "content": system_prompt}] + messages
         resp = await self._create_with_fallback(self._model, chat, max_tokens, stream=False)
         return resp.choices[0].message.content or ""
-
 
 
     async def stream_complete(
@@ -190,10 +277,11 @@ class _OpenAILLMClient(LLMClient):
             return "".join(chunks)
 
         response = await _collect(self._model)
-        if not response and self._model != _FALLBACK_MODEL:
-            response = await _collect(_FALLBACK_MODEL)
+        if not response and self._model != _DEFAULT_FALLBACK_MODEL:
+            response = await _collect(_DEFAULT_FALLBACK_MODEL)
         for piece in response:
             yield piece
+
 
 class _AnthropicLLMClient(LLMClient):
     def __init__(self, client: object, model: str) -> None:
