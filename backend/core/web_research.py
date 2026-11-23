@@ -35,11 +35,14 @@ VERIFIED_OFFICIAL_CHANNELS: dict[str, str] = {
     "GOTO Conferences": "UCs_tLP3AiwYKwdUHpltJPuA",
     "Microsoft Developer": "UCsMica-v34Irf9KVTh6xx-g",
     "HashiCorp": "UC-Royw29u1-263-299276645g",
+    "InfoQ": "UCkQX1tChV7Z7l1LFF4L9j_g",
+    "Nielsen Norman Group": "UC2oCugzU6W8-h95W7eBTUEg",
 }
 
 OFFICIAL_YOUTUBE_AUTHORS: set[str] = {
     "Atlassian", "Google Cloud Tech", "CNCF", "NVIDIA",
     "GOTO Conferences", "Microsoft Developer", "HashiCorp",
+    "InfoQ", "Nielsen Norman Group",
 }
 
 # Curated verified conference / organizational video fallback. Used when a
@@ -310,6 +313,7 @@ async def _fetch_youtube_channel(
                 continue
             results.append({
                 "title": title or f"{name} official video",
+                "video_id": video_id,
                 "url": f"https://www.youtube.com/watch?v={video_id}",
                 "embed_url": f"https://www.youtube.com/embed/{video_id}",
                 "channel": name,

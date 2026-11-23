@@ -55,24 +55,14 @@ class AgentResult:
 QUALITY_DIRECTIVE = (
     """
 
-RESPONSE QUALITY & GROUNDING STANDARDS:
-1. Provide a complete, thorough, well-structured executive answer. Never truncate mid-sentence.
-2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N].
-3. Include structured Markdown comparison tables, step-by-step frameworks, and a valid ```mermaid flowchart TD diagram when explaining workflows or architectures.
-4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, and clear go/no-go or action recommendations) with curated links to official documentation or reference videos from the retrieved sources (never fabricate URLs).
-5. Finish every Markdown table row, every bullet list, and the closing `## Next Steps / Recommendations` section cleanly; never leave a table cell, sentence, or section unfinished, and never truncate mid-table or mid-sentence before reaching token limits.
-
-RICH TYPOGRAPHY & SECTION STRUCTURE (every one of the 12 specialist agents):
-6. Use consistent, clean Markdown section headings prefixed with a relevant domain emoji/icon, for example:
-   - ## 🎯 Executive Overview
-   - ## 🔍 Key Observations & Context
-   - ## ⚙️ Actionable Implementation Plan
-   - ## 📊 Comparison & Metrics Matrix
-   - ## 🔀 Workflow Architecture
-   - ## ⚠️ Risks & Mitigations
-   Pick headings that fit the role's topic and domain, and keep heading text concise.
-7. Write well-spaced paragraphs: 1–3 concise sentences per paragraph, separated by blank lines. Keep Markdown tables cleanly aligned, and use bulleted/numbered lists with **bold** lead-ins throughout.
-8. At the very end of every response, always include a dedicated closing section `## 💡 Suggested Next Steps & Follow-Up Questions` containing 3–4 tailored, clickable-style prompt ideas directly aligned with the user's specific topic and domain so the user can effortlessly continue the conversation.
+RESPONSE QUALITY & GROUNDING STANDARDS (single pass — no regeneration):
+1. Produce ONE comprehensive, concise, well-structured answer (~750–1,000 words total) that finishes 100% cleanly. Never truncate mid-sentence, mid-table, or mid-fence. Stay within max_tokens=6144.
+2. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N]. Never fabricate URLs.
+3. Include exactly one concise summary table and, when explaining a workflow or architecture, exactly one compact `flowchart TD` Mermaid diagram (max 7 nodes, simple IDs, quoted labels — never `stateDiagram-v2`).
+4. Address all role-specific success criteria explicitly (milestones, risks & mitigations, stakeholder impact, metrics/SLOs, clear go/no-go or action recommendations) with curated links to official documentation only.
+5. Cover every required role section, finish every table row and bullet list cleanly, and end with `## 💡 Suggested Next Steps & Follow-Up Questions` (3–4 tailored follow-up ideas) as the final section.
+6. Do NOT output any YouTube/Vimeo links or "Related Videos" lists yourself — verified official organizational videos are appended automatically by the system.
+7. Use clear Markdown section headings with a relevant emoji (e.g. ## 🎯 Executive Overview), well-spaced paragraphs (1–3 sentences), and bulleted/numbered lists with **bold** lead-ins throughout.
 """
 )
 
@@ -183,12 +173,11 @@ class BaseAgent:
 
     def _response_is_incomplete(self, response: str) -> bool:
         """Return True if the LLM response appears to have been cut off
-        mid-sentence, mid-table, or with an unclosed code fence."""
+        mid-sentence (no terminal punctuation). Unclosed fences are closed
+        separately at the end of processing."""
         stripped = response.rstrip()
         if not stripped:
             return False
-        if response.count("```") % 2 != 0:
-            return True
         return stripped[-1] not in ".!?)]`"
 
 
@@ -293,7 +282,7 @@ class BaseAgent:
                     {"role": "assistant", "content": response},
                     {
                         "role": "user",
-                        "content": "Continue ONLY from the exact word where your previous message stopped. Do NOT repeat any earlier headings or sections.",
+                        "content": "Continue ONLY the final unfinished sentence/section in <= 150 words without repeating any earlier heading.",
                     },
                 ],
             ):
@@ -313,36 +302,9 @@ class BaseAgent:
         emit_log("info", "Guardrail evaluation complete",
                  {"passed": gr.passed, "violations": gr.violations})
 
-        # Phase 5/6: Evaluation + Critique/Self-Correction Loop.
+        # Phase 5/6: Evaluation (single pass — no response regeneration).
         evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
         loop = 0
-        while self.evaluator.should_revise(evaluation) and loop < self.evaluator.max_loops:
-            loop += 1
-            await trace_record("trace.self_correct.loop", "self_correct",
-                               f"iterate_{loop}",
-                               score=evaluation.score,
-                               data={"suggestions": evaluation.suggestions})
-            emit_log("warn", "Revision triggered by self-evaluation",
-                     {"iteration": loop, "score": evaluation.score})
-            critique = self.evaluator.generate_critique(
-                self.role, query, context_text, response, evaluation)
-            critique += (
-                "\nOutput ONLY the missing or improved sections — do NOT repeat "
-                "any headings or content already present in the response above."
-            )
-            await trace_record("trace.critique.generate", "critique", "generate",
-                               data={"critique": critique, "iteration": loop})
-            revision_messages = messages + [
-                {"role": "assistant", "content": response},
-                {"role": "user", "content": critique},
-            ]
-            revision = await self.llm.complete(self.system_prompt, revision_messages)
-            response = response + "\n\n" + revision
-            gr = self.evaluator.apply_guardrails(response)
-            response = gr.sanitized_response
-            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
-            emit_log("info", f"Re-evaluation complete (loop {loop})",
-                     {"score": evaluation.score, "passed": evaluation.passed})
 
         # Close any unclosed code fence and strip markers from the final response.
         if response.count("```") % 2 != 0:
@@ -548,7 +510,7 @@ class BaseAgent:
                     {"role": "assistant", "content": response},
                     {
                         "role": "user",
-                        "content": "Continue ONLY from the exact word where your previous message stopped. Do NOT repeat any earlier headings or sections.",
+                        "content": "Continue ONLY the final unfinished sentence/section in <= 150 words without repeating any earlier heading.",
                     },
                 ],
             ):
@@ -576,43 +538,12 @@ class BaseAgent:
             "data": {"phase": "guardrail", "status": "complete", "passed": gr.passed},
         }
 
-        # Phase 5/6: Evaluation + Critique/Self-Correction Loop (ensures Eval >= 88 & complete output).
+        # Phase 5/6: Evaluation (single pass — no response regeneration).
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}
         evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
         loop = 0
-        while self.evaluator.should_revise(evaluation) and loop < 1:
-            loop += 1
-            entry = await trace_record("trace.self_correct.loop", "self_correct", f"iterate_{loop}",
-                                       score=evaluation.score, data={"suggestions": evaluation.suggestions})
-            yield {"event": "trace", "data": entry}
-            yield {"event": "status", "data": {"message": f"Refining response quality (pass {loop})..."}}
-            critique = self.evaluator.generate_critique(self.role, query, context_text, response, evaluation)
-            critique += (
-                "\nEnsure the response is 100% complete (never cut off), includes clear citations "
-                "with URLs, structured tables, and achieves an evaluation score above 90. "
-                "Output ONLY the missing or improved sections — do NOT repeat any headings or "
-                "content already present in the response above."
-            )
-            entry = await trace_record("trace.critique.generate", "critique", "generate",
-                                       data={"critique": critique, "iteration": loop})
-            yield {"event": "trace", "data": entry}
-            revision_messages = messages + [
-                {"role": "assistant", "content": response},
-                {"role": "user", "content": critique},
-            ]
-            rev_chunks: list[str] = []
-            yield {"event": "token", "data": "\n\n---\n### Refined & Verified Response\n\n"}
-            async for chunk in self.llm.stream_complete(self.system_prompt, revision_messages):
-                rev_chunks.append(chunk)
-                yield {"event": "token", "data": chunk}
-            response = (
-                response
-                + "\n\n---\n### Refined & Verified Response\n\n"
-                + "".join(rev_chunks)
-            )
-            gr = self.evaluator.apply_guardrails(response)
-            response = gr.sanitized_response
-            evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
+        yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
+                                          "score": evaluation.score, "passed": evaluation.passed}}
 
         # Close any unclosed code fence, strip markers, append official videos.
         if response.count("```") % 2 != 0:

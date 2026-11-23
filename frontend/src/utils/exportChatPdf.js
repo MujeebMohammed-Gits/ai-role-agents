@@ -5,7 +5,7 @@ import { renderMermaidDiagrams } from "./markdownRenderer.js";
 const INDIGO_R = 79;
 const INDIGO_G = 70;
 const INDIGO_B = 229;
-const WATERMARK_TEXT = "AI Role Agents Portal • Official Output";
+const WATERMARK_TEXT = "AI Role Agents";
 const FOOTER_TEXT = "AI Role Agents built by Mujeeb Mohammed";
 
 export async function downloadConversationPdf(agent, conversation) {
@@ -109,7 +109,7 @@ export async function downloadConversationPdf(agent, conversation) {
 
   try {
     await renderMermaidDiagrams(wrapper);
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Scale every rendered Mermaid SVG to a readable width before capture.
     wrapper.querySelectorAll(".mermaid-rendered svg").forEach((svg) => {
@@ -125,10 +125,10 @@ export async function downloadConversationPdf(agent, conversation) {
         vbW = bb.width || 520;
         vbH = bb.height || 300;
       }
-      if (!vbW || !vbH || !isFinite(vbW) || !isFinite(vbH)) { vbW = 520; vbH = 300; }
-      const targetW = Math.min(730, Math.max(580, vbW * 1.35));
+      if (!vbW || !vbH || !isFinite(vbW) || !isFinite(vbH)) { vbW = 720; vbH = 405; }
+      const targetW = 720;
       let targetH = Math.round(targetW * (vbH / vbW));
-      const maxHeight = 620;
+      const maxHeight = 520;
       if (targetH > maxHeight) {
         targetH = maxHeight;
       }
@@ -137,6 +137,13 @@ export async function downloadConversationPdf(agent, conversation) {
       svg.style.width = targetW + "px";
       svg.style.height = targetH + "px";
       svg.style.maxWidth = "none";
+      // Size the container so the diagram occupies crisp full width in the PDF.
+      const container = svg.closest('.mermaid-rendered') || svg.parentElement;
+      if (container) {
+        container.style.width = targetW + "px";
+        container.style.height = targetH + "px";
+        container.style.maxWidth = "none";
+      }
     });
 
     // Break-free pagination: reserve space above any atomic block that would
@@ -160,6 +167,7 @@ export async function downloadConversationPdf(agent, conversation) {
 
     const canvas = await html2canvas(wrapper, {
       windowWidth: 800,
+      backgroundColor: null,
       scale: 2,
       logging: false,
       useCORS: true,
@@ -228,6 +236,9 @@ export async function downloadConversationPdf(agent, conversation) {
       const ctx = sliceCanvas.getContext("2d");
       ctx.drawImage(canvas, 0, sliceTop, canvas.width, srcH, 0, 0, canvas.width, srcH);
 
+      // ---- Diagonal background watermark (drawn first, behind content) ----
+      drawWatermark(pdf, pageWidth, pageHeight, WATERMARK_TEXT);
+
       const contentY = margin + headerHeight;
       const sliceRenderHeight = srcH * scaleFactor;
       pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", margin, contentY, usableWidth, sliceRenderHeight);
@@ -249,9 +260,6 @@ export async function downloadConversationPdf(agent, conversation) {
       pdf.setDrawColor(200, 200, 200);
       pdf.setLineWidth(0.3);
       pdf.line(margin, margin + 13, pageWidth - margin, margin + 13);
-
-      // ---- Diagonal background watermark ----
-      drawWatermark(pdf, pageWidth, pageHeight, WATERMARK_TEXT);
 
       // ---- Branded page footer ----
       const footerY = pageHeight - margin - 2;

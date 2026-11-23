@@ -86,9 +86,6 @@ export function renderMarkdown(text) {
   // External links open in a new tab. [video](url) becomes an embedded player.
   const originalLink = renderer.link;
   renderer.link = function (href, title, text) {
-    if (text && String(text).trim().toLowerCase() === 'video') {
-      return `<div class="video-wrapper my-3"><iframe class="w-full h-64" src="${escapeHtml(href)}" frameborder="0" allowfullscreen loading="lazy" sandbox="allow-same-origin allow-scripts"></iframe></div>`;
-    }
     const html = originalLink.call(this, href, title, text);
     if (href.startsWith('http://') || href.startsWith('https://')) {
       return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
@@ -136,7 +133,7 @@ export function renderMarkdown(text) {
   // Convert verified YouTube links to responsive 16:9 embed iframes after sanitization.
   html = html.replace(
     /<a[^>]*href="https?:\/\/(?:www\.youtube(?:-nocookie)?\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})"[^>]*>.*?<\/a>/g,
-    '<div class="video-wrapper my-3"><iframe class="w-full h-64" src="https://www.youtube-nocookie.com/embed/$1" frameborder="0" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>'
+    '<div class="video-wrapper my-3"><iframe class="w-full" src="https://www.youtube-nocookie.com/embed/$1" frameborder="0" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin" height="315" style="height:315px"></iframe></div>'
   );
 
   return html;
