@@ -22,15 +22,20 @@ export async function downloadConversationPdf(agent, conversation) {
   const footerHeight = 14;
   const contentHeight = usableHeight - headerHeight - footerHeight - 8; // 223 mm
 
+  const prevScrollY = window.scrollY;
+  const chatEl = document.querySelector('[data-chat-thread="true"]');
+  const prevChatScroll = chatEl ? chatEl.scrollTop : 0;
+
   const host = document.createElement("div");
   host.style.position = "fixed";
-  host.style.left = "0";
+  host.style.left = "-9999px";
   host.style.top = "0";
-  host.style.width = "0";
-  host.style.height = "0";
-  host.style.overflow = "hidden";
+  host.style.width = "800px";
+  host.style.height = "auto";
+  host.style.overflow = "visible";
   host.style.pointerEvents = "none";
-  host.style.zIndex = "-1";
+  host.style.opacity = "0";
+  host.style.zIndex = "-9999";
   document.body.appendChild(host);
 
   const wrapper = document.createElement("div");
@@ -57,14 +62,14 @@ export async function downloadConversationPdf(agent, conversation) {
     // Uniform typography: fixed px font sizes so there is zero font-size
     // disparity between headers, body text, and table cells across pages.
     "h1 { font-size: 18px !important; }",
-    "h2 { font-size: 15px !important; margin-top: 16px !important; margin-bottom: 6px !important; }",
-    "h3 { font-size: 13.5px !important; }",
+    "h2 { font-size: 16px !important; font-weight: 700 !important; margin: 18px 0 8px 0 !important; line-height: 1.35 !important; }",
+    "h3 { font-size: 14px !important; font-weight: 600 !important; margin: 14px 0 6px 0 !important; line-height: 1.35 !important; }",
     "h4 { font-size: 13px !important; }",
     "p, li, td, th { font-size: 12px !important; line-height: 1.55 !important; }",
     "h1, h2, h3, h4 { color: #0f172a !important; border: none !important; text-decoration: none !important; margin: 10px 0 6px !important; line-height: 1.55 !important; break-inside: avoid; }",
-    "p { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; }",
-    "li { margin: 3px 0; line-height: 1.55 !important; break-inside: avoid; }",
-    "ul, ol { margin: 6px 0 6px 20px; break-inside: avoid; }",
+    "p { margin: 0 0 10px 0 !important; line-height: 1.6 !important; font-size: 12.5px !important; }",
+    "li { display: list-item !important; margin: 0 0 7px 0 !important; line-height: 1.55 !important; font-size: 12.5px !important; position: static !important; }",
+    "ul, ol { margin: 6px 0 12px 22px !important; padding: 0 !important; }",
     "blockquote { border-left: 3px solid #0f172a; padding-left: 10px; margin: 8px 0; break-inside: avoid; }",
     "pre { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; }",
     ".mermaid-viewport { width: 100% !important; overflow: visible !important; margin: 8px 0; }",
@@ -218,6 +223,11 @@ export async function downloadConversationPdf(agent, conversation) {
       },
     });
 
+        window.scrollTo(0, prevScrollY);
+    if (chatEl) {
+      chatEl.scrollTop = prevChatScroll;
+    }
+
     const scaleFactor = usableWidth / canvas.width; // mm per canvas px
     const pageSlicePx = Math.floor(contentHeight / scaleFactor); // canvas px per content page
 
@@ -365,9 +375,9 @@ export async function downloadConversationPdf(agent, conversation) {
 function drawWatermark(pdf, pageWidth, pageHeight, text) {
   const cx = pageWidth / 2;
   const cy = pageHeight / 2;
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(40);
-  pdf.setTextColor(235, 238, 248);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(56);
+  pdf.setTextColor(214, 219, 238);
   pdf.text(text, cx, cy, { angle: 32, align: "center", baseline: "middle" });
   // Restore full-contrast color so page content drawn afterward is sharp.
   pdf.setTextColor(0, 0, 0);

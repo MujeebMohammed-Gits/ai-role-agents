@@ -108,11 +108,11 @@ class _OpenAILLMClient(LLMClient):
         self._client = client
         self._model = model
 
-    def _is_retriable_nvidia_404(self, exc) -> bool:
-        """True if ``exc`` is a 404 NotFoundError from the NVIDIA NIM endpoint.
+    def _is_retriable_nvidia_error(self, exc) -> bool:
+        """True if ``exc`` is a retriable NVIDIA NIM error (HTTP 400 or 404).
 
-        Only NVIDIA NIM 404s are retried with the fallback model; any other
-        provider's 404 is still surfaced to the caller.
+        Only NVIDIA NIM 400/404s are retried with the fallback model; any other
+        provider's error is still surfaced to the caller.
         """
         if "integrate.api.nvidia.com" not in str(getattr(self._client, "base_url", "")):
             return False
@@ -122,24 +122,26 @@ class _OpenAILLMClient(LLMClient):
             status = getattr(response, "status_code", None) if response is not None else None
         if status is not None:
             try:
-                return int(status) == 404
+                return int(status) in (400, 404)
             except (TypeError, ValueError):
                 return False
         text = str(exc).lower()
-        return "404" in text and ("not found" in text or "notfound" in text)
+        return ("400" in text or "404" in text) and (
+            "not found" in text or "notfound" in text or "bad request" in text
+        )
 
-    async def _create_with_fallback(self, chat: list[dict], max_tokens: int, stream: bool = False):
-        """Create a chat completion, retrying once with the fallback model on NVIDIA NIM 404."""
+    async def _create_with_fallback(self, model: str, chat: list[dict], max_tokens: int, stream: bool = False):
+        """Create a chat completion, retrying once with the fallback model on NVIDIA NIM 400/404."""
         try:
             return await self._client.chat.completions.create(
-                model=self._model,
+                model=model,
                 messages=chat,
                 max_tokens=max_tokens,
                 stream=stream,
             )
         except Exception as exc:
             cause = getattr(exc, "__cause__", None) or exc
-            if self._model != _FALLBACK_MODEL and self._is_retriable_nvidia_404(cause):
+            if model != _FALLBACK_MODEL and self._is_retriable_nvidia_error(cause):
                 return await self._client.chat.completions.create(
                     model=_FALLBACK_MODEL,
                     messages=chat,
@@ -147,7 +149,7 @@ class _OpenAILLMClient(LLMClient):
                     stream=stream,
                 )
             raise RuntimeError(
-                f"LLM API failed ({self._client.base_url} | model={self._model}): "
+                f"LLM API failed ({self._client.base_url} | model={model}): "
                 f"{type(cause).__name__}: {cause}"
             ) from exc
 
@@ -159,7 +161,7 @@ class _OpenAILLMClient(LLMClient):
         max_tokens: int = 6144,
     ) -> str:
         chat = [{"role": "system", "content": system_prompt}] + messages
-        resp = await self._create_with_fallback(chat, max_tokens, stream=False)
+        resp = await self._create_with_fallback(self._model, chat, max_tokens, stream=False)
         return resp.choices[0].message.content or ""
 
 
@@ -179,10 +181,19 @@ class _OpenAILLMClient(LLMClient):
         full_messages = [{"role": "system", "content": merged_sys}] + [
             m for m in messages if m.get("role") != "system"
         ]
-        stream = await self._create_with_fallback(full_messages, max_tokens, stream=True)
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        async def _collect(model: str) -> str:
+            stream = await self._create_with_fallback(model, full_messages, max_tokens, stream=True)
+            chunks: list[str] = []
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    chunks.append(chunk.choices[0].delta.content)
+            return "".join(chunks)
+
+        response = await _collect(self._model)
+        if not response and self._model != _FALLBACK_MODEL:
+            response = await _collect(_FALLBACK_MODEL)
+        for piece in response:
+            yield piece
 
 class _AnthropicLLMClient(LLMClient):
     def __init__(self, client: object, model: str) -> None:
