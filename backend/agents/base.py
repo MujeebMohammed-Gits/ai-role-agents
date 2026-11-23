@@ -106,6 +106,43 @@ def _extract_domain_keywords(query: str) -> list[str]:
     return keywords
 
 
+def _gate_passed(evaluation, response: str, role: str, evaluator, query: str) -> tuple[bool, list[str]]:
+    """Completion & Eval gate: the agent may not stop mid-way until every
+    structural requirement passes and the self-evaluation score exceeds 0.87
+    (passed is True). Returns (passed, missing_components)."""
+    response_lower = (response or "").lower()
+    query_lower = (query or "").lower()
+    missing: list[str] = []
+
+    # 1. Every required role heading present.
+    for section in evaluator.required_sections_for(role):
+        if not evaluator._section_present(section, response_lower):
+            missing.append(f"required section: {section}")
+
+    # 2. Valid ```mermaid workflow diagram and structured Markdown table.
+    wants_diagram = any(
+        kw in query_lower
+        for kw in ("workflow", "diagram", "architecture", "pipeline", "process", "plan")
+    )
+    if wants_diagram and "```mermaid" not in response_lower:
+        missing.append("```mermaid workflow diagram")
+    if re.search(r"^\s*\|.*\|\s*$", response or "", re.MULTILINE) is None:
+        missing.append("Markdown comparison/metrics table (| ... |)")
+
+    # 3. Closing next-steps section present and clean terminal ending.
+    if "## 💡 suggested next steps & follow-up questions" not in response_lower:
+        missing.append("## 💡 Suggested Next Steps & Follow-Up Questions section")
+    stripped = (response or "").rstrip()
+    if stripped and stripped[-1] not in ".!?)]\`":
+        missing.append("terminal punctuation (response ends mid-sentence)")
+
+    # 4. Eval > 87 (passed is True).
+    if not (getattr(evaluation, "passed", False) and getattr(evaluation, "score", 0.0) > 0.87):
+        missing.append(f"eval score > 0.87 (current {getattr(evaluation, 'score', 0.0):.2f}, passed={getattr(evaluation, 'passed', False)})")
+
+    return (len(missing) == 0, missing)
+
+
 class BaseAgent:
     def __init__(
         self,
@@ -361,21 +398,37 @@ class BaseAgent:
                 stage_scores={},
                 meta={"error": str(exc)},
             )
-        loop = 0
+        # --- Completion & Eval Gate Loop: refuses to let the agent stop mid-way ---
+        gate_attempt = 0
+        while gate_attempt < 3:
+            gate_ok, missing = _gate_passed(evaluation, response, self.role, self.evaluator, query)
+            if gate_ok:
+                break
+            gate_attempt += 1
+            await trace_record("trace.self_correct.loop", "self_correct", "loop",
+                               data={"attempt": gate_attempt, "missing": missing,
+                                     "score": evaluation.score, "passed": evaluation.passed})
+            emit_log("info", f"Gate checkpoint {gate_attempt}: completing missing component(s): {', '.join(missing)}")
 
-        # Surgical guardrail refinement: at most one fast pass when Pass 1 is
-        # below the Eval 88 threshold. Appends only the missing delta (missing
-        # sections / citations) without repeating any section already written,
-        # then re-scores so the final response reaches Eval 88+.
-        if evaluation.suggestions and self.evaluator.should_revise(evaluation) and loop < 1:
-            if response.count("```") % 2 != 0:
-                response += "\n```"
+            # Stream ONLY the missing structural component(s). Never repeat earlier
+            # sections; strictly forbid parenthetical word-count notes.
+            instruction_parts: list[str] = []
+            if any("required section" in m for m in missing):
+                instruction_parts.append("Write ONLY the missing required role section headings with concise content under each.")
+            if any("mermaid" in m for m in missing):
+                instruction_parts.append("Add ONE ```mermaid workflow diagram (flowchart TD, max 7 nodes) explaining the workflow.")
+            if any("table" in m for m in missing):
+                instruction_parts.append("Add ONE structured Markdown comparison/metrics table using | ... | syntax.")
+            if any("Next Steps" in m for m in missing):
+                instruction_parts.append("Add the closing '## 💡 Suggested Next Steps & Follow-Up Questions' section with 3-4 bulleted next-step items.")
+            if any("terminal punctuation" in m for m in missing):
+                instruction_parts.append("End the response with a clean sentence ending in terminal punctuation (. ! ?). Do not stop mid-sentence.")
+            if any("eval score" in m for m in missing):
+                instruction_parts.append("Strengthen coverage of the user's query terms so the self-evaluation score exceeds 0.87.")
             instruction = (
-                "Directly enrich ONLY the missing section(s), citations, or "
-                "diagram listed below, in the agent's own authoritative voice, "
-                "in <= 220 words, without repeating any earlier heading or "
-                "already-written section:\n"
-                + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
+                "You are continuing a response that stopped mid-way. Write ONLY the missing component(s) listed below.\n"
+                "Do NOT repeat any earlier section or heading. Do NOT include parenthetical word-count notes such as (~125 words).\n\n"
+                "Missing component(s):\n- " + "\n- ".join(instruction_parts)
             )
             refinement_messages = [
                 {"role": "system", "content": self.system_prompt},
@@ -389,7 +442,6 @@ class BaseAgent:
             if delta.strip():
                 response = response.rstrip() + "\n\n" + delta.strip()
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
-            loop = 1
 
         # Close any unclosed code fence and strip markers from the final response.
         if response.count("```") % 2 != 0:
@@ -654,19 +706,38 @@ class BaseAgent:
             yield {"event": "phase", "data": {"phase": "evaluation", "status": "complete",
                                               "score": evaluation.score, "passed": evaluation.passed}}
 
-            # Surgical guardrail refinement: at most one fast pass when Pass 1 is
-            # below the Eval 88 threshold. Appends only the missing delta (missing
-            # sections / citations) without repeating any section already written,
-            # then re-scores so the final response reaches Eval 88+.
-            if evaluation.suggestions and self.evaluator.should_revise(evaluation) and loop < 1:
-                if response.count("```") % 2 != 0:
-                    response += "\n```"
+            # --- Completion & Eval Gate Loop: refuses to let the agent stop mid-way ---
+            gate_attempt = 0
+            while gate_attempt < 3:
+                gate_ok, missing = _gate_passed(evaluation, response, self.role, self.evaluator, query)
+                if gate_ok:
+                    break
+                gate_attempt += 1
+                entry = await trace_record("trace.self_correct.loop", "self_correct", "loop",
+                                           data={"attempt": gate_attempt, "missing": missing,
+                                                 "score": evaluation.score, "passed": evaluation.passed})
+                yield {"event": "trace", "data": entry}
+                emit_log("info", f"Gate checkpoint {gate_attempt}: completing missing component(s): {', '.join(missing)}")
+
+                # Stream ONLY the missing structural component(s). Never repeat earlier
+                # sections; strictly forbid parenthetical word-count notes.
+                instruction_parts: list[str] = []
+                if any("required section" in m for m in missing):
+                    instruction_parts.append("Write ONLY the missing required role section headings with concise content under each.")
+                if any("mermaid" in m for m in missing):
+                    instruction_parts.append("Add ONE ```mermaid workflow diagram (flowchart TD, max 7 nodes) explaining the workflow.")
+                if any("table" in m for m in missing):
+                    instruction_parts.append("Add ONE structured Markdown comparison/metrics table using | ... | syntax.")
+                if any("Next Steps" in m for m in missing):
+                    instruction_parts.append("Add the closing '## 💡 Suggested Next Steps & Follow-Up Questions' section with 3-4 bulleted next-step items.")
+                if any("terminal punctuation" in m for m in missing):
+                    instruction_parts.append("End the response with a clean sentence ending in terminal punctuation (. ! ?). Do not stop mid-sentence.")
+                if any("eval score" in m for m in missing):
+                    instruction_parts.append("Strengthen coverage of the user's query terms so the self-evaluation score exceeds 0.87.")
                 instruction = (
-                    "Directly enrich ONLY the missing section(s), citations, "
-                    "or diagram listed below, in the agent's own authoritative "
-                    "voice, in <= 220 words, without repeating any earlier "
-                    "heading or already-written section:\n"
-                    + "\n".join(f"- {s}" for s in (evaluation.suggestions or []))
+                    "You are continuing a response that stopped mid-way. Write ONLY the missing component(s) listed below.\n"
+                    "Do NOT repeat any earlier section or heading. Do NOT include parenthetical word-count notes such as (~125 words).\n\n"
+                    "Missing component(s):\n- " + "\n- ".join(instruction_parts)
                 )
                 refinement_messages = [
                     {"role": "system", "content": self.system_prompt},
@@ -681,7 +752,6 @@ class BaseAgent:
                 if delta.strip():
                     response = response.rstrip() + "\n\n" + delta.strip()
                 evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
-                loop = 1
         except Exception as exc:  # noqa: BLE001 — never abort streaming on evaluation failure
             logger.exception("Agent %s evaluation failed: %s", self.name, exc)
             evaluation = EvaluationResult(

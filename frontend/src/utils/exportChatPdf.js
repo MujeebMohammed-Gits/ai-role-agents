@@ -23,6 +23,8 @@ export async function downloadConversationPdf(agent, conversation) {
   const contentHeight = usableHeight - headerHeight - footerHeight - 8; // 223 mm
 
   const prevScrollY = window.scrollY;
+  const prevOverflowAnchor = document.documentElement.style.overflowAnchor;
+  document.documentElement.style.overflowAnchor = 'none';
   const chatEl = document.querySelector('[data-chat-thread="true"]');
   const prevChatScroll = chatEl ? chatEl.scrollTop : 0;
 
@@ -71,7 +73,7 @@ export async function downloadConversationPdf(agent, conversation) {
     "p, li, td, th { font-size: 12px !important; line-height: 1.55 !important; }",
     "h1, h2, h3, h4 { color: #0f172a !important; border: none !important; text-decoration: none !important; margin: 10px 0 6px !important; line-height: 1.55 !important; break-inside: avoid; }",
     "p { margin: 0 0 10px 0 !important; line-height: 1.65 !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; font-size: 12.5px !important; }",
-    "li { display: list-item !important; margin: 0 0 7px 0 !important; line-height: 1.65 !important; overflow: visible !important; padding-top: 2px !important; padding-bottom: 3px !important; font-size: 12.5px !important; position: static !important; }",
+    "li { display: list-item !important; margin-bottom: 8px !important; line-height: 1.6 !important; padding: 2px 0 !important; font-size: 12.5px !important; position: static !important; }",
     "ul, ol { margin: 6px 0 12px 22px !important; padding: 0 !important; }",
     "blockquote { border-left: 3px solid #0f172a; padding-left: 10px; margin: 8px 0; break-inside: avoid; }",
     "pre { margin: 6px 0; line-height: 1.55 !important; break-inside: avoid; }",
@@ -230,25 +232,42 @@ export async function downloadConversationPdf(agent, conversation) {
     });
 
     const scaleFactor = usableWidth / canvas.width; // mm per canvas px
-    const effectiveSlicePx = Math.floor(contentHeight / scaleFactor) - 24; // canvas px per content page, 24px bottom safety margin
+    const effectiveSlicePx = Math.floor(contentHeight / scaleFactor) - 28; // canvas px per content page, 28px bottom safety buffer
 
     let sliceTop = 0;
-    let pageCount = 0;
+    const slices = [];
     while (sliceTop < canvas.height) {
-      if (pageCount > 0) pdf.addPage();
-      pageCount += 1;
-      const pageNum = pageCount;
-
       const srcH = Math.min(effectiveSlicePx, canvas.height - sliceTop);
       const sliceCanvas = document.createElement("canvas");
       sliceCanvas.width = canvas.width;
       sliceCanvas.height = srcH;
       const ctx = sliceCanvas.getContext("2d");
       ctx.drawImage(canvas, 0, sliceTop, canvas.width, srcH, 0, 0, canvas.width, srcH);
+      if (hasMeaningfulContent(sliceCanvas, 35)) {
+        slices.push({ top: sliceTop, h: srcH });
+      }
+      sliceTop += effectiveSlicePx;
+    }
+    const totalPages = slices.length;
+    const pageSliceCssPx = contentHeight * 800 / usableWidth;
+    const scrollY = window.scrollY || 0;
+    const BOUNDARY_NUDGE_PX = 18;
+    const leafSelector =
+      "h1, h2, h3, h4, p, li, tr, blockquote, pre, .mermaid-rendered, .video-link-card";
+
+    slices.forEach((slice, index) => {
+      const pageNum = index + 1;
+      if (pageNum > 1) pdf.addPage();
+      const srcH = slice.h;
+      const sliceCanvas = document.createElement("canvas");
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = srcH;
+      const ctx = sliceCanvas.getContext("2d");
+      ctx.drawImage(canvas, 0, slice.top, canvas.width, srcH, 0, 0, canvas.width, srcH);
 
       // Drop near-empty trailing slices so an orphan page with a single clipped line is never generated.
       if (!hasMeaningfulContent(sliceCanvas, 35)) {
-        break;
+        return;
       }
 
       // ---- Diagonal background watermark (drawn first, behind content) ----
@@ -259,16 +278,7 @@ export async function downloadConversationPdf(agent, conversation) {
       pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", margin, contentY, usableWidth, sliceRenderHeight);
 
       // ---- Break-free pagination: nudge any block within 18px of a page edge
-      // onto the next page so nothing is clipped at page seams. The safe content
-      // region (starts at margin+headerHeight ~ 37mm > 58pt top safe zone, ends
-      // well above the 48pt bottom safe zone) already honors marginTop/
-      // marginBottom padding; this pass catches blocks that still hug a page
-      // boundary. ----
-      const pageSliceCssPx = contentHeight * 800 / usableWidth;
-      const scrollY = window.scrollY || 0;
-      const BOUNDARY_NUDGE_PX = 18;
-      const leafSelector =
-        "h1, h2, h3, h4, p, li, tr, blockquote, pre, .mermaid-rendered, .video-link-card";
+      // onto the next page so nothing is clipped at page seams. ----
       wrapper.querySelectorAll(leafSelector).forEach((el) => {
         const r = el.getBoundingClientRect();
         const top = r.top + scrollY;
@@ -302,7 +312,7 @@ export async function downloadConversationPdf(agent, conversation) {
       pdf.setLineWidth(0.3);
       pdf.line(margin, margin + 13, pageWidth - margin, margin + 13);
 
-      // ---- Branded page footer ----
+      // ---- Branded page footer (rendered after totalPages is known) ----
       const footerY = pageHeight - margin - 2;
       pdf.setDrawColor(200, 200, 200);
       pdf.setLineWidth(0.3);
@@ -310,14 +320,12 @@ export async function downloadConversationPdf(agent, conversation) {
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(8);
       pdf.setTextColor(120, 120, 120);
-      pdf.text("Page " + pageNum + " of " + pageCount, margin, pageHeight - margin + 6);
+      pdf.text("Page " + pageNum + " of " + totalPages, margin, pageHeight - margin + 6);
       pdf.setFont("helvetica", "italic");
       pdf.setFontSize(8);
       const builtByWidth = pdf.getStringUnitWidth(FOOTER_TEXT) * 8 / pdf.internal.scaleFactor;
       pdf.text(FOOTER_TEXT, pageWidth - margin - builtByWidth, pageHeight - margin + 6);
-
-      sliceTop += effectiveSlicePx;
-    }
+    });
 
     const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, "_").toLowerCase();
     pdf.save(safeName + "_conversation.pdf");
@@ -367,6 +375,7 @@ export async function downloadConversationPdf(agent, conversation) {
       }
     }
   } finally {
+    document.documentElement.style.overflowAnchor = prevOverflowAnchor;
     window.scrollTo(0, prevScrollY);
     if (chatEl) {
       chatEl.scrollTop = prevChatScroll;

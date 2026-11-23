@@ -542,8 +542,9 @@ export default function App() {
     selectedAgent && !loading && conversation.some((m) => m.role === 'assistant' && (m.content || '').trim().length > 0)
   );
 
-  const handleDownloadPdf = useCallback(async () => {
+  const handleDownloadPdf = useCallback(async (e) => {
     if (!hasCompletedAgentChat) return;
+    e.currentTarget.blur();
     await downloadConversationPdf(selectedAgent, conversation);
   }, [selectedAgent, conversation, loading]);
 

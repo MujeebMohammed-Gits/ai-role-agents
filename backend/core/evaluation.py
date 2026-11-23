@@ -32,7 +32,7 @@ logger = get_logger("core.evaluation")
 
 # Conversational filler stripped before measuring query-keyword coverage.
 _STOPWORDS: set[str] = {
-    "about", "start", "give", "fully", "detailed", "plan", "how", "get",
+    "about", "start", "give", "fully", "detailed", "how", "get",
     "started", "clear", "related", "where", "applicable", "with", "and",
     "for", "the", "to", "in", "a", "an", "of",
 }
@@ -40,10 +40,15 @@ _STOPWORDS: set[str] = {
 # Stem variants treated as equivalent when matching query terms.
 _STEM_MAP: dict[str, str] = {
     "transformation": "transform",
+    "transforms": "transform",
     "pilots": "pilot",
     "healthcare": "health",
     "workflows": "workflow",
     "diagrams": "diagram",
+    "plans": "plan",
+    "processes": "process",
+    "architectures": "architecture",
+    "pipelines": "pipeline",
 }
 
 
@@ -304,6 +309,49 @@ class SelfEvaluator:
         relevance = 0.65 * term_coverage + 0.35 * min(1.0, context_coverage * 4.0)
         return min(1.0, relevance)
 
+    def _structural_suggestions(
+        self,
+        role: str,
+        query_lower: str,
+        response_lower: str,
+        response: str,
+    ) -> list[str]:
+        """Explicit structural checks appended to evaluation suggestions when a
+        response is missing required role sections, a workflow Mermaid diagram,
+        a structured Markdown comparison/metrics table, a closing next-steps
+        section, or a clean terminal sentence."""
+        suggestions: list[str] = []
+
+        # 1. Every required role section present.
+        for section in self.required_sections_for(role):
+            if not self._section_present(section, response_lower):
+                suggestions.append(f"Missing required section: {section}")
+
+        # 2. Mermaid workflow diagram when the query asks for workflow/diagram/
+        #    architecture/pipeline/process/plan.
+        wants_diagram = any(
+            kw in query_lower
+            for kw in ("workflow", "diagram", "architecture", "pipeline", "process", "plan")
+        )
+        if wants_diagram and "```mermaid" not in response_lower:
+            suggestions.append("Add a ```mermaid workflow diagram")
+
+        # 3. Structured Markdown comparison/metrics table (| ... |).
+        if re.search(r"^\s*\|.*\|\s*$", response or "", re.MULTILINE) is None:
+            suggestions.append("Add a structured Markdown comparison/metrics table (| ... |)")
+
+        # 4. Closing next-steps section.
+        if "## 💡 suggested next steps & follow-up questions" not in response_lower:
+            suggestions.append("Add closing '## 💡 Suggested Next Steps & Follow-Up Questions' section")
+
+        # 5. Clean terminal ending (not mid-sentence).
+        stripped = (response or "").rstrip()
+        if stripped and stripped[-1] not in ".!?)]\`":
+            suggestions.append("Response ends mid-sentence; finish with terminal punctuation")
+
+        return suggestions
+
+
     def evaluate(self, role: str, query: str, context: str,
                  response: str) -> EvaluationResult:
         criteria = self.criteria_for(role)
@@ -358,9 +406,9 @@ class SelfEvaluator:
         suggestions: list[str] = []
         if relevance < 0.4:
             suggestions.append("Address the specific terms of the user's query more directly.")
-        for section in required_sections:
-            if not self._section_present(section, response_lower):
-                suggestions.append(f"Missing required section: {section}")
+        suggestions.extend(
+            self._structural_suggestions(role, query_lower, response_lower, response)
+        )
         if not has_numbered:
             suggestions.append("Add numbered action steps")
         if not has_bullets:
