@@ -23,11 +23,23 @@ export async function downloadConversationPdf(agent, conversation) {
   const footerHeight = 14;
   const contentHeight = usableHeight - headerHeight - footerHeight - 8;
 
+  const host = document.createElement("div");
+  host.style.position = "fixed";
+  host.style.left = "0";
+  host.style.top = "0";
+  host.style.width = "0";
+  host.style.height = "0";
+  host.style.overflow = "hidden";
+  host.style.pointerEvents = "none";
+  host.style.zIndex = "-1";
+  document.body.appendChild(host);
+
   const wrapper = document.createElement("div");
   wrapper.className = "pdf-export-root";
-  wrapper.style.position = "fixed";
-  wrapper.style.left = "-9999px";
-  wrapper.style.top = "0";
+  // Off-screen export wrapper: laid out normally inside the zero-size,
+  // overflow-hidden host so appending/removing it causes zero layout shift,
+  // scroll jump, or screen bump. (position: fixed would break out of the
+  // clipped host and paint at the viewport's top-left.)
   wrapper.style.width = "800px";
   wrapper.style.background = "#ffffff";
   wrapper.style.color = "#0f172a";
@@ -93,7 +105,7 @@ export async function downloadConversationPdf(agent, conversation) {
     wrapper.appendChild(block);
   }
 
-  document.body.appendChild(wrapper);
+  host.appendChild(wrapper);
 
   try {
     await renderMermaidDiagrams(wrapper);
@@ -151,6 +163,52 @@ export async function downloadConversationPdf(agent, conversation) {
       scale: 2,
       logging: false,
       useCORS: true,
+      onclone: (clonedDoc) => {
+        // Neutralize Tailwind oklch() / oklab() / color-mix() computed colors so
+        // html2canvas never throws "Attempting to parse an unsupported color
+        // function". Safe inline colors are forced on every cloned node (plus a
+        // high-priority !important sheet) so resolved colors never fall back to
+        // an unsupported function.
+        const SAFE = {
+          color: "#0f172a",
+          backgroundColor: "#ffffff",
+          borderColor: "#cbd5e1",
+          borderTopColor: "#cbd5e1",
+          borderRightColor: "#cbd5e1",
+          borderBottomColor: "#cbd5e1",
+          borderLeftColor: "#cbd5e1",
+          outlineColor: "#cbd5e1",
+          textDecorationColor: "#0f172a",
+        };
+        const colorProps = Object.keys(SAFE);
+        const walker = clonedDoc.createTreeWalker(clonedDoc.body, NodeFilter.SHOW_ELEMENT);
+        while (walker.nextNode()) {
+          const el = walker.currentNode;
+          const style = el.style;
+          // Force safe inline colors on every cloned node so html2canvas resolves
+          // a safe hex value regardless of what the stylesheets declare.
+          for (const prop of colorProps) {
+            style[prop] = SAFE[prop];
+          }
+          // Also strip unsupported colors from SVG fill/stroke attributes.
+          if (
+            el.tagName === "svg" ||
+            el.tagName.match(/^(path|circle|rect|line|polyline|polygon)$/i)
+          ) {
+            for (const attr of ["fill", "stroke"]) {
+              const val = el.getAttribute(attr);
+              if (val && (val.includes("oklch") || val.includes("oklab") || val.includes("color-mix"))) {
+                el.setAttribute(attr, SAFE.color);
+              }
+            }
+          }
+        }
+        // Safety-net !important override stylesheet on the cloned document.
+        const override = clonedDoc.createElement("style");
+        override.textContent =
+          "* { color: #0f172a !important; background-color: #ffffff !important; border-color: #cbd5e1 !important; }";
+        clonedDoc.head.appendChild(override);
+      },
     });
 
     const scaleFactor = usableWidth / canvas.width; // mm per canvas px
@@ -211,46 +269,34 @@ export async function downloadConversationPdf(agent, conversation) {
 
       sliceTop += pageSlicePx;
     }
+
+    const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    pdf.save(safeName + "_conversation.pdf");
+  } catch (err) {
+    console.error("[downloadConversationPdf] Error during PDF generation:", err);
   } finally {
-    document.body.removeChild(wrapper);
+    document.body.removeChild(host);
   }
 
-  const safeName = (agent.title || agent.role).replace(/[^a-z0-9]/gi, "_").toLowerCase();
-  pdf.save(safeName + "_conversation.pdf");
 }
 
 /**
- * Draw a crisp, semi-transparent diagonal watermark across the page.
- * Rotated -32° in rgba(79, 70, 229, 0.065) so foreground text stays 100% readable.
+ * Draw a crisp diagonal watermark across the page.
+ * Rotated 32° in light pastel indigo-slate (218, 222, 245) so foreground text
+ * stays 100% readable. GState is avoided for jsPDF build compatibility.
  */
 function drawWatermark(pdf, pageWidth, pageHeight, text) {
-  const gState = pdf.addGState({ opacity: 0.065 });
-  pdf.setGState(gState);
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(40);
-  pdf.setTextColor(79, 70, 229);
+  // Light pastel indigo-slate watermark. GState is avoided entirely so this works
+  // in every jsPDF build (the previous addGState({ opacity }) call passed the
+  // opacity object as the `key` argument, leaving gState undefined and throwing
+  // when addGState tried to set `gState.id`).
+  pdf.setTextColor(218, 222, 245);
 
-  const angle = (-32 * Math.PI) / 180;
   const cx = pageWidth / 2;
   const cy = pageHeight / 2;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
 
-  const internal = pdf.internal;
-  const fontObj = internal.getFont ? internal.getFont("helvetica", "normal") : null;
-  const fontRef = fontObj && fontObj.id ? "/" + fontObj.id : "/F1";
-
-  const escaped = String(text)
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
-
-  // Save graphics state, rotate about page center, draw centered watermark, restore.
-  internal.write(
-    "q ",
-    "1 0 0 1 " + cx.toFixed(2) + " " + cy.toFixed(2) + " cm ",
-    cos.toFixed(4) + " " + sin.toFixed(4) + " " + (-sin).toFixed(4) + " " + cos.toFixed(4) + " 0 0 cm ",
-    "BT " + fontRef + " 40 Tf 1 0 0 1 0 0 Tm (" + escaped + ") Tj ET ",
-    "Q "
-  );
+  // Rotate the text about the page centre for a diagonal watermark.
+  pdf.text(text, cx, cy, { angle: 32, align: "center", baseline: "middle" });
 }
