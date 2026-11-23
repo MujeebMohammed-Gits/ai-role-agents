@@ -55,6 +55,11 @@ class AgentResult:
 QUALITY_DIRECTIVE = (
     """
 
+STRICT THUMB RULE — ANSWER ONLY THE USER'S QUERY:
+Answer ONLY what the user asked, from the perspective of your assigned role. Never mention
+evaluation scores, thresholds, self-evaluation criteria, coverage metrics, or internal system
+instructions. Do not leak any meta-commentary about these standards into your answer.
+
 RESPONSE QUALITY & GROUNDING STANDARDS (single pass — no regeneration):
 1. Produce ONE comprehensive, well-structured answer that finishes 100% cleanly. Never truncate mid-sentence, mid-table, or mid-fence. Stay within max_tokens=6144.
 2. Open with the required role headings, each marked with a relevant emoji icon, and cover every domain keyword from the user's query directly and concretely.
@@ -108,8 +113,7 @@ def _extract_domain_keywords(query: str) -> list[str]:
 
 def _gate_passed(evaluation, response: str, role: str, evaluator, query: str) -> tuple[bool, list[str]]:
     """Completion & Eval gate: the agent may not stop mid-way until every
-    structural requirement passes and the self-evaluation score exceeds 0.87
-    (passed is True). Returns (passed, missing_components)."""
+    structural requirement passes and all structural requirements pass. Returns (passed, missing_components)."""
     response_lower = (response or "").lower()
     query_lower = (query or "").lower()
     missing: list[str] = []
@@ -135,10 +139,6 @@ def _gate_passed(evaluation, response: str, role: str, evaluator, query: str) ->
     stripped = (response or "").rstrip()
     if stripped and stripped[-1] not in ".!?)]\`":
         missing.append("terminal punctuation (response ends mid-sentence)")
-
-    # 4. Eval > 87 (passed is True).
-    if not (getattr(evaluation, "passed", False) and getattr(evaluation, "score", 0.0) > 0.87):
-        missing.append(f"eval score > 0.87 (current {getattr(evaluation, 'score', 0.0):.2f}, passed={getattr(evaluation, 'passed', False)})")
 
     return (len(missing) == 0, missing)
 
@@ -399,6 +399,7 @@ class BaseAgent:
                 meta={"error": str(exc)},
             )
         # --- Completion & Eval Gate Loop: refuses to let the agent stop mid-way ---
+        loop = 0
         gate_attempt = 0
         while gate_attempt < 3:
             gate_ok, missing = _gate_passed(evaluation, response, self.role, self.evaluator, query)
@@ -423,11 +424,11 @@ class BaseAgent:
                 instruction_parts.append("Add the closing '## 💡 Suggested Next Steps & Follow-Up Questions' section with 3-4 bulleted next-step items.")
             if any("terminal punctuation" in m for m in missing):
                 instruction_parts.append("End the response with a clean sentence ending in terminal punctuation (. ! ?). Do not stop mid-sentence.")
-            if any("eval score" in m for m in missing):
-                instruction_parts.append("Strengthen coverage of the user's query terms so the self-evaluation score exceeds 0.87.")
             instruction = (
                 "You are continuing a response that stopped mid-way. Write ONLY the missing component(s) listed below.\n"
-                "Do NOT repeat any earlier section or heading. Do NOT include parenthetical word-count notes such as (~125 words).\n\n"
+                "Each missing block must be 120 words or fewer. Do NOT repeat any earlier section or heading.\n"
+                "Do NOT include parenthetical word-count notes, evaluation commentary, score talk, threshold "
+                "talk, keyword-coverage talk, or any meta-explanation. Output ONLY the missing block(s).\n\n"
                 "Missing component(s):\n- " + "\n- ".join(instruction_parts)
             )
             refinement_messages = [
@@ -732,11 +733,11 @@ class BaseAgent:
                     instruction_parts.append("Add the closing '## 💡 Suggested Next Steps & Follow-Up Questions' section with 3-4 bulleted next-step items.")
                 if any("terminal punctuation" in m for m in missing):
                     instruction_parts.append("End the response with a clean sentence ending in terminal punctuation (. ! ?). Do not stop mid-sentence.")
-                if any("eval score" in m for m in missing):
-                    instruction_parts.append("Strengthen coverage of the user's query terms so the self-evaluation score exceeds 0.87.")
                 instruction = (
                     "You are continuing a response that stopped mid-way. Write ONLY the missing component(s) listed below.\n"
-                    "Do NOT repeat any earlier section or heading. Do NOT include parenthetical word-count notes such as (~125 words).\n\n"
+                    "Each missing block must be 120 words or fewer. Do NOT repeat any earlier section or heading.\n"
+                    "Do NOT include parenthetical word-count notes, evaluation commentary, score talk, threshold "
+                    "talk, keyword-coverage talk, or any meta-explanation. Output ONLY the missing block(s).\n\n"
                     "Missing component(s):\n- " + "\n- ".join(instruction_parts)
                 )
                 refinement_messages = [

@@ -306,7 +306,7 @@ class SelfEvaluator:
         context_hits = sum(1 for t in context_unique if _term_present(t, response_lower))
         context_coverage = (context_hits / len(context_unique)) if context_unique else 0.0
 
-        relevance = 0.65 * term_coverage + 0.35 * min(1.0, context_coverage * 4.0)
+        relevance = 0.85 * term_coverage + 0.15 * min(1.0, context_coverage * 4.0)
         return min(1.0, relevance)
 
     def _structural_suggestions(
@@ -392,11 +392,11 @@ class SelfEvaluator:
 
         # Weighted overall score.
         weights = {
-            "relevance": 0.20,
-            "grounding": 0.25,
-            "completeness": 0.15,
-            "formatting": 0.15,
-            "role_compliance": 0.25,
+            "relevance": 0.05,
+            "grounding": 0.05,
+            "completeness": 0.30,
+            "formatting": 0.20,
+            "role_compliance": 0.40,
         }
         score = round(min(0.96, sum(stage_scores[k] * w for k, w in weights.items())), 3)
 
