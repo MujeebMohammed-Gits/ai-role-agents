@@ -31,14 +31,22 @@ const CONTENT_WIDTH = PAGE_W - MARGIN_X * 2; // 503.28
 
 // Strict Helvetica / ASCII sanitizer. Strips raw Markdown markers and every
 // glyph Helvetica cannot render, so zero garbled bytes ever reach the PDF.
+// Unicode fractions, dashes and curly quotes are mapped to plain ASCII *before*
+// the non-ASCII strip so 1/2, 1/4, 3/4, -, ', ", ->, >=, <= survive as readable text.
 const sanitizeText = (str) => {
   let s = String(str ?? '');
+  // Unicode fractions -> ASCII
+  s = s.replace(/¼/g, '1/4');
+  s = s.replace(/½/g, '1/2');
+  s = s.replace(/¾/g, '3/4');
+  // Dashes and curly quotes -> ASCII
   s = s.replace(/—|–/g, '-');
-  s = s.replace(/’|'/g, "'");
-  s = s.replace(/“|"/g, '"');
+  s = s.replace(/’|‘/g, "'");
+  s = s.replace(/”|“/g, '"');
   s = s.replace(/→/g, '->');
   s = s.replace(/≥/g, '>=');
   s = s.replace(/≤/g, '<=');
+  // Inline Markdown markers
   s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
   s = s.replace(/\*([^*]+)\*/g, '$1');
   s = s.replace(/`([^`]+)`/g, '$1');
@@ -47,6 +55,22 @@ const sanitizeText = (str) => {
   s = s.replace(/[^\x20-\x7E\n]/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
   return s;
+};
+
+// True background watermark drawn underneath all text and tables on a page.
+// Uses real PDF transparency (GState opacity 0.07) so it never washes out
+// foreground content.
+const drawWatermark = (d) => {
+  d.saveGraphicsState();
+  d.setGState(new d.GState({ opacity: 0.07 }));
+  d.setTextColor(INDIGO_R, INDIGO_G, INDIGO_B);
+  d.setFont('helvetica', 'bold');
+  d.setFontSize(54);
+  d.text(WATERMARK_TEXT, PAGE_W / 2, PAGE_H / 2 + 40, { align: 'center', angle: 32 });
+  d.restoreGraphicsState();
+  d.setTextColor(TEXT_R, TEXT_G, TEXT_B);
+  d.setFont('helvetica', 'normal');
+  d.setFontSize(10);
 };
 
 // Lazy mermaid so the module loads cleanly even in headless / Node contexts.
@@ -72,6 +96,9 @@ export async function buildConversationPdf(agent, conversation) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   let y = TOP_Y;
 
+  // True background watermark on page 1, before any content is drawn.
+  drawWatermark(doc);
+
   const agentTitle = (agent && agent.title) || (agent && agent.role) || 'Conversation';
   const dateStr = new Date().toLocaleDateString();
 
@@ -79,10 +106,15 @@ export async function buildConversationPdf(agent, conversation) {
     doc.setFont('helvetica', bold && italic ? 'bolditalic' : bold ? 'bold' : italic ? 'italic' : 'normal');
   };
 
+  const startNewPage = () => {
+    doc.addPage();
+    y = TOP_Y;
+    drawWatermark(doc);
+  };
+
   const ensureSpace = (neededPt) => {
     if (y + neededPt > BOTTOM_Y) {
-      doc.addPage();
-      y = TOP_Y;
+      startNewPage();
     }
   };
 
@@ -226,10 +258,16 @@ export async function buildConversationPdf(agent, conversation) {
     }
 
     const maxW = 490;
-    const maxH = 300;
-    const fit = Math.min(maxW / vbW, maxH / vbH);
-    const imgW = vbW * fit;
-    const imgH = vbH * fit;
+    const maxH = 440;
+    let fit = Math.min(maxW / vbW, maxH / vbH);
+    let imgW = vbW * fit;
+    let imgH = vbH * fit;
+    // Minimum readable width so every node label stays legible.
+    if (imgW < 240) {
+      fit = 240 / vbW;
+      imgW = 240;
+      imgH = vbH * fit;
+    }
 
     ensureSpace(imgH + 18);
     try {
@@ -263,8 +301,9 @@ export async function buildConversationPdf(agent, conversation) {
       if (/^```/.test(line)) return true;
       if (/^\s*\|/.test(line)) return true;
       if (/^(#{1,3})\s/.test(line)) return true;
-      if (/^(\d+)\.\s+/.test(line)) return true;
-      if (/^[-*]\s+/.test(line)) return true;
+      if (/^\s*(\d+)[.)]\s+/.test(line)) return true;
+      if (/^\s*[-*•]\s+/.test(line)) return true;
+      if (/^\s*[-*_]{3,}\s*$/.test(line)) return true;
       return false;
     };
 
@@ -298,6 +337,12 @@ export async function buildConversationPdf(agent, conversation) {
         continue;
       }
 
+      if (/^\s*[-*_]{3,}\s*$/.test(line)) {
+        blocks.push({ type: 'hr' });
+        i++;
+        continue;
+      }
+
       const h = line.match(/^(#{1,3})\s+(.*)$/);
       if (h) {
         blocks.push({ type: 'heading', depth: h[1].length, text: h[2] });
@@ -305,14 +350,14 @@ export async function buildConversationPdf(agent, conversation) {
         continue;
       }
 
-      const num = line.match(/^(\d+)\.\s+(.*)$/);
-      const bul = line.match(/^[-*]\s+(.*)$/);
+      const num = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+      const bul = line.match(/^\s*([-*•])\s+(.*)$/);
       if (num || bul) {
         const ordered = !!num;
         const items = [];
         while (i < lines.length) {
-          const m = lines[i].match(/^(\d+)\.\s+(.*)$/);
-          const b = lines[i].match(/^[-*]\s+(.*)$/);
+          const m = lines[i].match(/^\s*(\d+)[.)]\s+(.*)$/);
+          const b = lines[i].match(/^\s*([-*•])\s+(.*)$/);
           if ((ordered && m) || (!ordered && b)) {
             items.push((m || b)[2]);
             i++;
@@ -368,6 +413,9 @@ export async function buildConversationPdf(agent, conversation) {
             startY: y,
             margin: { left: MARGIN_X, right: MARGIN_X, top: 62, bottom: 50 },
             rowPageBreak: 'avoid',
+            willDrawPage: (data) => {
+              drawWatermark(doc);
+            },
             styles: {
               font: 'helvetica',
               fontSize: 9,
@@ -404,25 +452,30 @@ export async function buildConversationPdf(agent, conversation) {
           setStyle(false, false);
           doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
         } else if (block.type === 'list') {
-          const markerX = MARGIN_X + 4;
-          const bodyX = MARGIN_X + 18;
-          const maxWidth = CONTENT_WIDTH - 18;
+          const markerX = MARGIN_X + 6;
+          const bodyX = MARGIN_X + 20;
+          const maxWidth = CONTENT_WIDTH - 20; // 483 pt
+          const lineHeight = 14.5;
           let counter = 1;
           for (const item of block.items) {
             const marker = block.ordered ? String(counter++) + '.' : '•';
             const clean = sanitizeText(item);
-            if (!clean) continue;
             const textLines = doc.splitTextToSize(clean, maxWidth);
-            ensureSpace(textLines.length * 14 + 6);
+            ensureSpace(textLines.length * lineHeight + 6);
             setStyle(false, false);
             doc.setFontSize(10);
             doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
             doc.text(marker, markerX, y);
             for (let j = 0; j < textLines.length; j++) {
-              doc.text(textLines[j], bodyX, y + j * 14);
+              doc.text(textLines[j], bodyX, y + j * lineHeight);
             }
-            y += textLines.length * 14 + 6;
+            y += textLines.length * lineHeight + 6;
           }
+        } else if (block.type === 'hr') {
+          ensureSpace(12);
+          doc.setDrawColor(226, 232, 240);
+          doc.line(MARGIN_X, y + 4, PAGE_W - MARGIN_X, y + 4);
+          y += 12;
         } else if (block.type === 'paragraph') {
           const clean = sanitizeText(block.text);
           if (!clean) continue;
@@ -456,12 +509,6 @@ export async function buildConversationPdf(agent, conversation) {
     const totalPages = doc.getNumberOfPages();
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
-
-      // Soft diagonal background watermark.
-      doc.setFontSize(54);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(232, 236, 248);
-      doc.text(WATERMARK_TEXT, PAGE_W / 2, PAGE_H / 2 + 40, { angle: 32, align: 'center', baseline: 'middle' });
 
       doc.setFillColor(INDIGO_R, INDIGO_G, INDIGO_B);
       doc.rect(0, 0, PAGE_W, 3, 'F');
@@ -508,3 +555,4 @@ export async function downloadConversationPdf(agent, conversation) {
   const slug = String(agentTitle).replace(/[^a-z0-9]/gi, '_').toLowerCase();
   doc.save(`ai-role-agents-${slug}-chat.pdf`);
 }
+
