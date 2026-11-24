@@ -1,6 +1,8 @@
 ﻿import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import mermaid from 'mermaid';
+
+const runAutoTable =
+  typeof autoTable === 'function' ? autoTable : autoTable?.default;
 
 const INDIGO_R = 79;
 const INDIGO_G = 70;
@@ -27,41 +29,54 @@ const TOP_Y = 62;
 const BOTTOM_Y = PAGE_H - 48;
 const CONTENT_WIDTH = PAGE_W - MARGIN_X * 2; // 503.28
 
-export async function downloadConversationPdf(agent, conversation) {
-  if (!agent || !conversation || conversation.length === 0) return;
+// Strict Helvetica / ASCII sanitizer. Strips raw Markdown markers and every
+// glyph Helvetica cannot render, so zero garbled bytes ever reach the PDF.
+const sanitizeText = (str) => {
+  let s = String(str ?? '');
+  s = s.replace(/—|–/g, '-');
+  s = s.replace(/’|'/g, "'");
+  s = s.replace(/“|"/g, '"');
+  s = s.replace(/→/g, '->');
+  s = s.replace(/≥/g, '>=');
+  s = s.replace(/≤/g, '<=');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
+  s = s.replace(/\*([^*]+)\*/g, '$1');
+  s = s.replace(/`([^`]+)`/g, '$1');
+  s = s.replace(/\[([^\]]*)\]\(([^)]*)\)/g, '$1 ($2)');
+  s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ');
+  s = s.replace(/[^\x20-\x7E\n]/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+};
+
+// Lazy mermaid so the module loads cleanly even in headless / Node contexts.
+let mermaidModule = null;
+let mermaidAttempted = false;
+const loadMermaid = async () => {
+  if (mermaidAttempted) return mermaidModule;
+  mermaidAttempted = true;
+  try {
+    mermaidModule = await import('mermaid');
+  } catch (e) {
+    console.warn('[exportChatPdf] mermaid import failed', e);
+    mermaidModule = null;
+  }
+  return mermaidModule;
+};
+
+export async function buildConversationPdf(agent, conversation) {
+  if (!agent || !conversation || conversation.length === 0) {
+    throw new Error('[downloadConversationPdf] agent and conversation are required');
+  }
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   let y = TOP_Y;
 
   const agentTitle = (agent && agent.title) || (agent && agent.role) || 'Conversation';
-  const slug = String(agentTitle).replace(/[^a-z0-9]/gi, '_').toLowerCase();
   const dateStr = new Date().toLocaleDateString();
 
-  // Strict ASCII / Helvetica text sanitizer
-  const sanitizePdfText = (str) => {
-    let s = String(str ?? '');
-    s = s.replace(/—|–/g, '-');
-    s = s.replace(/‘|’/g, "'");
-    s = s.replace(/“|”/g, '"');
-    s = s.replace(/→/g, '->');
-    s = s.replace(/•/g, '-');
-    s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ');
-    s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
-    s = s.replace(/\*([^*]+)\*/g, '$1');
-    s = s.replace(/`([^`]+)`/g, '$1');
-    s = s.replace(/\[([^\]]*)\]\(([^)]*)\)/g, '$1 ($2)');
-    s = s.replace(/[^\x20-\x7E\n]/g, ' ');
-    s = s.replace(/\s+/g, ' ').trim();
-    return s;
-  };
-
-  const sanitizeMermaidLabel = (label) => {
-    let s = String(label ?? '');
-    s = s.replace(/≥/g, '>=');
-    s = s.replace(/≤/g, '<=');
-    s = s.replace(/→/g, '->');
-    s = s.replace(/^(\s*)\[([^\]]+)\](\s*)$/m, '$1"$2"$3');
-    return s;
+  const setStyle = (bold, italic) => {
+    doc.setFont('helvetica', bold && italic ? 'bolditalic' : bold ? 'bold' : italic ? 'italic' : 'normal');
   };
 
   const ensureSpace = (neededPt) => {
@@ -71,73 +86,131 @@ export async function downloadConversationPdf(agent, conversation) {
     }
   };
 
-  const setStyle = (bold, italic) => {
-    doc.setFont('helvetica', bold && italic ? 'bolditalic' : bold ? 'bold' : italic ? 'italic' : 'normal');
-  };
-
   const drawSpeakerHeader = (label, isUser) => {
-    ensureSpace(26);
-    const headerColor = isUser ? { r: TEXT_R, g: TEXT_G, b: TEXT_B } : { r: INDIGO_R, g: INDIGO_G, b: INDIGO_B };
-    setStyle(true, false);
-    doc.setFontSize(11.5);
-    doc.setTextColor(headerColor.r, headerColor.g, headerColor.b);
-    doc.text(label, MARGIN_X, y);
-    const ruleY = y + 5;
+    ensureSpace(30);
+    const fill = isUser ? { r: 241, g: 245, b: 249 } : { r: 238, g: 242, b: 255 };
+    const textColor = isUser ? { r: TEXT_R, g: TEXT_G, b: TEXT_B } : { r: INDIGO_R, g: INDIGO_G, b: INDIGO_B };
+    const bannerH = 20;
+    doc.setFillColor(fill.r, fill.g, fill.b);
     doc.setDrawColor(LINE_R, LINE_G, LINE_B);
     doc.setLineWidth(0.4);
-    doc.line(MARGIN_X, ruleY, MARGIN_X + CONTENT_WIDTH, ruleY);
-    y = ruleY + 8;
-    setStyle(false, false);
+    doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, bannerH, 3, 3, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(textColor.r, textColor.g, textColor.b);
+    doc.text(label, MARGIN_X + 8, y + 14);
+    y += bannerH + 8;
     doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
+    setStyle(false, false);
   };
 
-  let mermaidReady = false;
+  let mermaidDiagramIndex = 0;
 
-  const renderMermaidFallback = (source) => {
+  const renderMermaidVectorFallback = (source) => {
     const lines = String(source).split('\n').filter((l) => l.trim() !== '');
     if (lines.length === 0) return;
-    ensureSpace(lines.length * 14 + 8);
-    setStyle(false, false);
+    const steps = [];
+    const seen = new Set();
+    const addStep = (id, label) => {
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        steps.push(label || id);
+      }
+    };
+    const nodeLabel = /^[A-Za-z0-9_]+\[([^\]]*)\]/;
+    const linkMatch = /([A-Za-z0-9_]+)\s*-->\s*([A-Za-z0-9_]+)/;
+    for (const line of lines) {
+      const lm = line.match(linkMatch);
+      if (lm) {
+        addStep(lm[1], null);
+        addStep(lm[2], null);
+        continue;
+      }
+      const nm = line.match(nodeLabel);
+      if (nm) {
+        const id = (line.match(/^[A-Za-z0-9_]+/) || [])[0] || '';
+        addStep(id, nm[1]);
+      }
+    }
+    if (steps.length === 0) {
+      for (const line of lines) {
+        steps.push(sanitizeText(line).slice(0, 40) || line);
+      }
+    }
+    const pad = 10;
+    const boxW = CONTENT_WIDTH;
+    const headerH = 20;
+    const lineH = 14;
+    const totalH = pad * 2 + headerH + steps.length * lineH + 12;
+    ensureSpace(totalH);
+    const boxX = MARGIN_X;
+    const boxY = y;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(LINE_R, LINE_G, LINE_B);
+    doc.setLineWidth(0.8);
+    doc.roundedRect(boxX, boxY, boxW, totalH, 3, 3, 'FD');
+    doc.setFillColor(INDIGO_R, INDIGO_G, INDIGO_B);
+    doc.rect(boxX, boxY, boxW, headerH, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Mermaid workflow (vector fallback)', boxX + pad, boxY + 14);
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-    let yy = y;
-    for (const line of lines) {
-      const clean = sanitizePdfText(line);
-      if (!clean) continue;
-      const wrapped = doc.splitTextToSize(clean, CONTENT_WIDTH);
-      for (const w of wrapped) {
-        doc.text(w, MARGIN_X, yy);
-        yy += 14;
-      }
-      yy += 6;
+    let yy = boxY + headerH + pad;
+    const chain = steps.map((s, i) => (i + 1) + '. ' + sanitizeText(s)).join('   ->   ');
+    const wrapped = doc.splitTextToSize(chain, boxW - pad * 2);
+    for (const w of wrapped) {
+      doc.text(w, boxX + pad, yy);
+      yy += lineH;
     }
-    y = yy;
+    y = boxY + totalH + 12;
   };
 
   const renderMermaidBlock = async (source) => {
-    const cleanSource = String(source).split('\n').map(sanitizeMermaidLabel).join('\n');
-
-    if (!mermaidReady) {
-      try {
-        mermaid.initialize({ startOnLoad: false, theme: 'default', htmlLabels: false, securityLevel: 'loose' });
-        mermaidReady = true;
-      } catch (e) {
-        console.warn('[exportChatPdf] mermaid.initialize failed', e);
-        return renderMermaidFallback(cleanSource);
-      }
-    }
+    mermaidDiagramIndex += 1;
+    const cleanSource = String(source)
+      .split('\n')
+      .map((line) => {
+        let s = line;
+        s = s.replace(/≥/g, '>=');
+        s = s.replace(/≤/g, '<=');
+        s = s.replace(/→/g, '->');
+        s = s.replace(/^(\s*)\[([^\]]+)\](\s*)$/m, '$1"$2"$3');
+        return s;
+      })
+      .join('\n');
 
     let svgString = '';
     try {
-      const id = 'mermaid_' + Math.random().toString(36).slice(2, 9);
-      const result = await mermaid.render(id, cleanSource, { htmlLabels: false });
-      svgString = result.svg || '';
+      if (typeof document !== 'undefined') {
+        const rendered = document.querySelectorAll('.mermaid-rendered svg');
+        const existing = rendered[mermaidDiagramIndex - 1];
+        if (existing) {
+          svgString = existing.outerHTML || existing.innerHTML || '';
+        }
+      }
     } catch (e) {
-      console.warn('[exportChatPdf] mermaid.render failed', e);
-      return renderMermaidFallback(cleanSource);
+      // DOM not available or query failed; fall through to mermaid.render.
     }
 
-    if (!svgString) return renderMermaidFallback(cleanSource);
+    if (!svgString) {
+      const mermaid = await loadMermaid();
+      if (mermaid) {
+        try {
+          mermaid.initialize({ startOnLoad: false, theme: 'default', htmlLabels: false, securityLevel: 'loose' });
+          const result = await mermaid.render('mermaid_' + Math.random().toString(36).slice(2, 9), cleanSource, { htmlLabels: false });
+          svgString = result.svg || '';
+        } catch (e) {
+          console.warn('[exportChatPdf] mermaid.render failed', e);
+        }
+      }
+    }
+
+    if (!svgString) {
+      return renderMermaidVectorFallback(cleanSource);
+    }
 
     let vbW = 700;
     let vbH = 405;
@@ -153,13 +226,12 @@ export async function downloadConversationPdf(agent, conversation) {
     }
 
     const maxW = 490;
-    const maxH = 310;
+    const maxH = 300;
     const fit = Math.min(maxW / vbW, maxH / vbH);
     const imgW = vbW * fit;
     const imgH = vbH * fit;
 
     ensureSpace(imgH + 18);
-
     try {
       const img = new Image();
       await new Promise((resolve, reject) => {
@@ -177,7 +249,7 @@ export async function downloadConversationPdf(agent, conversation) {
       doc.addImage(canvas.toDataURL('image/png'), 'PNG', centerX, y, imgW, imgH);
     } catch (e) {
       console.warn('[exportChatPdf] mermaid rasterize failed', e);
-      return renderMermaidFallback(cleanSource);
+      return renderMermaidVectorFallback(cleanSource);
     }
     y += imgH + 18;
   };
@@ -279,18 +351,18 @@ export async function downloadConversationPdf(agent, conversation) {
           await renderMermaidBlock(block.source);
         } else if (block.type === 'table') {
           const tableLines = block.lines;
-          const headerRow = tableLines[0].replace(/^\s*\||\s*\|$/g, '').split('|').map((c) => sanitizePdfText(c));
+          const headerRow = tableLines[0].replace(/^\s*\||\s*\|$/g, '').split('|').map((c) => sanitizeText(c));
           const rows = [];
           for (let r = 1; r < tableLines.length; r++) {
             const rowLine = tableLines[r];
             const trimmed = rowLine.replace(/^\s*\||\s*\|$/g, '');
             if (/^[:-\s|]+$/.test(trimmed)) continue;
-            rows.push(trimmed.split('|').map((c) => sanitizePdfText(c)));
+            rows.push(trimmed.split('|').map((c) => sanitizeText(c)));
           }
           if (headerRow.length === 0 && rows.length === 0) continue;
 
           ensureSpace(40);
-          autoTable(doc, {
+          runAutoTable(doc, {
             head: [headerRow],
             body: rows,
             startY: y,
@@ -314,11 +386,11 @@ export async function downloadConversationPdf(agent, conversation) {
           });
           y = doc.lastAutoTable.finalY + 14;
         } else if (block.type === 'heading') {
-          const clean = sanitizePdfText(block.text);
+          const clean = sanitizeText(block.text);
           if (!clean) continue;
           const size = block.depth === 1 ? 14 : block.depth === 2 ? 12.5 : 11;
           const isIndigo = block.depth === 1 || block.depth === 2;
-          ensureSpace(48);
+          ensureSpace(50);
           setStyle(true, false);
           doc.setFontSize(size);
           doc.setTextColor(isIndigo ? INDIGO_R : DARK_R, isIndigo ? INDIGO_G : DARK_G, isIndigo ? INDIGO_B : DARK_B);
@@ -338,7 +410,7 @@ export async function downloadConversationPdf(agent, conversation) {
           let counter = 1;
           for (const item of block.items) {
             const marker = block.ordered ? String(counter++) + '.' : '•';
-            const clean = sanitizePdfText(item);
+            const clean = sanitizeText(item);
             if (!clean) continue;
             const textLines = doc.splitTextToSize(clean, maxWidth);
             ensureSpace(textLines.length * 14 + 6);
@@ -352,7 +424,7 @@ export async function downloadConversationPdf(agent, conversation) {
             y += textLines.length * 14 + 6;
           }
         } else if (block.type === 'paragraph') {
-          const clean = sanitizePdfText(block.text);
+          const clean = sanitizeText(block.text);
           if (!clean) continue;
           const textLines = doc.splitTextToSize(clean, CONTENT_WIDTH);
           ensureSpace(textLines.length * 14.5 + 8);
@@ -364,7 +436,7 @@ export async function downloadConversationPdf(agent, conversation) {
           }
           y += textLines.length * 14.5 + 8;
         } else if (block.type === 'code') {
-          const clean = sanitizePdfText(block.source);
+          const clean = sanitizeText(block.source);
           if (!clean) continue;
           const textLines = doc.splitTextToSize(clean, CONTENT_WIDTH);
           ensureSpace(textLines.length * 14 + 8);
@@ -385,13 +457,11 @@ export async function downloadConversationPdf(agent, conversation) {
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
 
-      const gState = doc.addGState({ opacity: 0.06 });
-      doc.setGState(gState);
+      // Soft diagonal background watermark.
       doc.setFontSize(54);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(234, 237, 248);
+      doc.setTextColor(232, 236, 248);
       doc.text(WATERMARK_TEXT, PAGE_W / 2, PAGE_H / 2 + 40, { angle: 32, align: 'center', baseline: 'middle' });
-      doc.setGState(doc.addGState({ opacity: 1 }));
 
       doc.setFillColor(INDIGO_R, INDIGO_G, INDIGO_B);
       doc.rect(0, 0, PAGE_W, 3, 'F');
@@ -424,43 +494,17 @@ export async function downloadConversationPdf(agent, conversation) {
 
     setStyle(false, false);
     doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-    doc.save(`ai-role-agents-${slug}-chat.pdf`);
+    return doc;
   } catch (err) {
-    console.error('[downloadConversationPdf] vector-PDF path failed:', err);
-    try {
-      const fallback = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-      const fPageH = PAGE_H;
-      const fMargin = MARGIN_X;
-      let fy = TOP_Y;
-      fallback.setFont('helvetica', 'normal');
-      fallback.setFontSize(11);
-      fallback.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-      fallback.text('AI Role Agents portal', fMargin, fy);
-      fy += 14;
-      fallback.setFontSize(9);
-      fallback.setTextColor(MUTED_R, MUTED_G, MUTED_B);
-      fallback.text('Conversation Export', fMargin, fy);
-      fy += 20;
-      fallback.setFontSize(11);
-      fallback.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-      for (const message of conversation) {
-        const role = message.role === 'user' ? 'User' : agentTitle;
-        fallback.text(role + ':', fMargin, fy);
-        fy += 12;
-        const lines = fallback.splitTextToSize(String(message.content || ''), CONTENT_WIDTH);
-        for (const line of lines) {
-          if (fy > fPageH - 46) {
-            fallback.addPage();
-            fy = TOP_Y;
-          }
-          fallback.text(line, fMargin, fy);
-          fy += 13;
-        }
-        fy += 8;
-      }
-      fallback.save(`ai-role-agents-${slug}-chat.pdf`);
-    } catch (fbErr) {
-      console.error('[downloadConversationPdf] text fallback failed:', fbErr);
-    }
+    console.error('[buildConversationPdf] vector-PDF path failed:', err);
+    throw err;
   }
+}
+
+export async function downloadConversationPdf(agent, conversation) {
+  if (!agent || !conversation || conversation.length === 0) return;
+  const doc = await buildConversationPdf(agent, conversation);
+  const agentTitle = (agent && agent.title) || (agent && agent.role) || 'Conversation';
+  const slug = String(agentTitle).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  doc.save(`ai-role-agents-${slug}-chat.pdf`);
 }
