@@ -156,6 +156,7 @@ export async function buildConversationPdf(agent, conversation) {
     doc.setTextColor(textColor.r, textColor.g, textColor.b);
     doc.text(label, MARGIN_X + 8, y + 14);
     y += bannerH + 8;
+    y += 10;
     doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
     setStyle(false, false);
   };
@@ -281,11 +282,10 @@ export async function buildConversationPdf(agent, conversation) {
       vbH = 405;
     }
 
-    const availH = BOTTOM_Y - y - 14;
-    if (availH < 240) {
+    if (BOTTOM_Y - y < 280) {
       startNewPage();
     }
-    const maxDiagramH = Math.min(340, BOTTOM_Y - y - 14);
+    const maxDiagramH = Math.min(430, BOTTOM_Y - y - 16);
     const maxDiagramW = CONTENT_WIDTH - 20;
     const scale = Math.min(maxDiagramW / vbW, maxDiagramH / vbH);
     const imgW = vbW * scale;
@@ -410,6 +410,7 @@ export async function buildConversationPdf(agent, conversation) {
       const isUser = message.role === 'user';
       const label = isUser ? 'User' : agentTitle;
       drawSpeakerHeader(label, isUser);
+      let skippedDuplicateTitle = false;
 
       const raw = message.content != null ? String(message.content) : '';
       const blocks = parseBlocks(raw);
@@ -462,9 +463,14 @@ export async function buildConversationPdf(agent, conversation) {
         } else if (block.type === 'heading') {
           const clean = sanitizeText(block.text);
           if (!clean) continue;
+          if (!isUser && !skippedDuplicateTitle && clean.toLowerCase() === agentTitle.toLowerCase()) {
+            skippedDuplicateTitle = true;
+            continue;
+          }
           const size = block.depth === 1 ? 14 : block.depth === 2 ? 12.5 : 11;
           const isIndigo = block.depth === 1 || block.depth === 2;
-          ensureSpace(50);
+          if (block.depth === 2) y += 6;
+          ensureSpace(78);
           setStyle(true, false);
           doc.setFontSize(size);
           doc.setTextColor(isIndigo ? INDIGO_R : DARK_R, isIndigo ? INDIGO_G : DARK_G, isIndigo ? INDIGO_B : DARK_B);
@@ -478,7 +484,7 @@ export async function buildConversationPdf(agent, conversation) {
           setStyle(false, false);
           doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
         } else if (block.type === 'list') {
-          const bulletX = MARGIN_X + 4;
+          const bulletX = MARGIN_X + 6;
           const textX = MARGIN_X + 20;
           const maxWidth = CONTENT_WIDTH - 20; // 483 pt
           const lineHeight = 14.5;
