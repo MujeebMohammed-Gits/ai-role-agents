@@ -80,6 +80,24 @@ def _ensure_heading_blank_line(response: str) -> str:
     so renderers never show raw ``## `` hashes as plain text."""
     return re.sub(r"\n+(?=#{2,}\s)", "\n\n", response)
 
+
+def _strip_trailing_next_steps(text: str) -> str:
+    """Remove a trailing "Suggested Next Steps & Follow-Up Questions" section.
+
+    A gate refinement pass can re-append this closing section when the response
+    already ends with one. If present, strip the heading line and everything
+    after it so only the first occurrence survives.
+    """
+    marker = "suggested next steps & follow-up questions"
+    lower = text.lower()
+    idx = lower.rfind(marker)
+    if idx == -1:
+        return text
+    line_start = text.rfind("\n", 0, idx)
+    if line_start == -1:
+        line_start = 0
+    return text[:line_start].rstrip()
+
 # Conversational filler stripped before extracting domain keywords.
 _KEYWORD_STOPWORDS: set[str] = {
     "about", "start", "give", "fully", "detailed", "plan", "how", "get",
@@ -417,7 +435,11 @@ class BaseAgent:
             if any("required section" in m for m in missing):
                 instruction_parts.append("Write ONLY the missing required role section headings with concise content under each.")
             if any("mermaid" in m for m in missing):
-                instruction_parts.append("Add ONE ```mermaid workflow diagram (flowchart TD, max 7 nodes) explaining the workflow.")
+                instruction_parts.append(
+                    "Add ONE ```mermaid workflow diagram (flowchart TD, max 7 nodes) explaining the workflow. "
+                    "Output ONLY this missing diagram block: do not repeat any earlier section, and do not "
+                    "repeat the Observation section or the Suggested Next Steps & Follow-Up Questions section."
+                )
             if any("table" in m for m in missing):
                 instruction_parts.append("Add ONE structured Markdown comparison/metrics table using | ... | syntax.")
             if any("Next Steps" in m for m in missing):
@@ -441,6 +463,8 @@ class BaseAgent:
                 delta_chunks.append(chunk)
             delta = "".join(delta_chunks)
             if delta.strip():
+                if "suggested next steps & follow-up questions" in response.lower():
+                    delta = _strip_trailing_next_steps(delta)
                 response = response.rstrip() + "\n\n" + delta.strip()
             evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
 
@@ -726,7 +750,11 @@ class BaseAgent:
                 if any("required section" in m for m in missing):
                     instruction_parts.append("Write ONLY the missing required role section headings with concise content under each.")
                 if any("mermaid" in m for m in missing):
-                    instruction_parts.append("Add ONE ```mermaid workflow diagram (flowchart TD, max 7 nodes) explaining the workflow.")
+                    instruction_parts.append(
+                        "Add ONE ```mermaid workflow diagram (flowchart TD, max 7 nodes) explaining the workflow. "
+                        "Output ONLY this missing diagram block: do not repeat any earlier section, and do not "
+                        "repeat the Observation section or the Suggested Next Steps & Follow-Up Questions section."
+                    )
                 if any("table" in m for m in missing):
                     instruction_parts.append("Add ONE structured Markdown comparison/metrics table using | ... | syntax.")
                 if any("Next Steps" in m for m in missing):
@@ -751,6 +779,8 @@ class BaseAgent:
                     yield {"event": "token", "data": chunk}
                 delta = "".join(delta_chunks)
                 if delta.strip():
+                    if "suggested next steps & follow-up questions" in response.lower():
+                        delta = _strip_trailing_next_steps(delta)
                     response = response.rstrip() + "\n\n" + delta.strip()
                 evaluation = self.evaluator.evaluate(self.role, query, context_text, response)
         except Exception as exc:  # noqa: BLE001 — never abort streaming on evaluation failure

@@ -257,17 +257,19 @@ export async function buildConversationPdf(agent, conversation) {
       vbH = 405;
     }
 
-    const maxW = 490;
-    const maxH = 440;
-    let fit = Math.min(maxW / vbW, maxH / vbH);
-    let imgW = vbW * fit;
-    let imgH = vbH * fit;
-    // Minimum readable width so every node label stays legible.
-    if (imgW < 240) {
-      fit = 240 / vbW;
-      imgW = 240;
-      imgH = vbH * fit;
+    // Never let a Mermaid diagram run past the content bottom or overlap the
+    // footer: clamp to the remaining vertical space and content width, then
+    // scale proportionally. If less than 240 pt of room remains, start a fresh
+    // page so the diagram begins cleanly at the top.
+    const availH = BOTTOM_Y - y - 14;
+    if (availH < 240) {
+        startNewPage();
     }
+    const maxDiagramH = Math.min(360, BOTTOM_Y - y - 14);
+    const maxDiagramW = CONTENT_WIDTH - 20;
+    const scale = Math.min(maxDiagramW / vbW, maxDiagramH / vbH);
+    const imgW = vbW * scale;
+    const imgH = vbH * scale;
 
     ensureSpace(imgH + 18);
     try {
@@ -300,7 +302,7 @@ export async function buildConversationPdf(agent, conversation) {
     const isBlockStart = (line) => {
       if (/^```/.test(line)) return true;
       if (/^\s*\|/.test(line)) return true;
-      if (/^(#{1,3})\s/.test(line)) return true;
+      if (/^\s*(#{1,4})\s/.test(line)) return true;
       if (/^\s*(\d+)[.)]\s+/.test(line)) return true;
       if (/^\s*[-*•]\s+/.test(line)) return true;
       if (/^\s*[-*_]{3,}\s*$/.test(line)) return true;
@@ -343,7 +345,7 @@ export async function buildConversationPdf(agent, conversation) {
         continue;
       }
 
-      const h = line.match(/^(#{1,3})\s+(.*)$/);
+      const h = line.match(/^\s*(#{1,4})\s+(.*)$/);
       if (h) {
         blocks.push({ type: 'heading', depth: h[1].length, text: h[2] });
         i++;
@@ -389,7 +391,10 @@ export async function buildConversationPdf(agent, conversation) {
       drawSpeakerHeader(label, isUser);
 
       const raw = message.content != null ? String(message.content) : '';
-      const blocks = parseBlocks(raw);
+      // Normalize headings that follow a paragraph without a blank line so they
+      // parse as styled headings instead of printing literal Markdown hashes.
+      const normalized = raw.replace(/([^\n])\n(#{1,3}\s+)/g, '$1\n\n$2');
+      const blocks = parseBlocks(normalized);
 
       for (const block of blocks) {
         if (block.type === 'mermaid') {
@@ -406,7 +411,10 @@ export async function buildConversationPdf(agent, conversation) {
           }
           if (headerRow.length === 0 && rows.length === 0) continue;
 
-          ensureSpace(40);
+          const estTableH = (rows.length + 1) * 28 + 16;
+          if (y + estTableH > BOTTOM_Y && estTableH <= (BOTTOM_Y - TOP_Y) * 0.85) {
+            startNewPage();
+          }
           runAutoTable(doc, {
             head: [headerRow],
             body: rows,
@@ -452,22 +460,22 @@ export async function buildConversationPdf(agent, conversation) {
           setStyle(false, false);
           doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
         } else if (block.type === 'list') {
-          const markerX = MARGIN_X + 6;
-          const bodyX = MARGIN_X + 20;
+          const bulletX = MARGIN_X + 4;
+          const textX = MARGIN_X + 20;
           const maxWidth = CONTENT_WIDTH - 20; // 483 pt
           const lineHeight = 14.5;
           let counter = 1;
           for (const item of block.items) {
             const marker = block.ordered ? String(counter++) + '.' : '•';
             const clean = sanitizeText(item);
-            const textLines = doc.splitTextToSize(clean, maxWidth);
+            const lines = doc.splitTextToSize(clean, maxWidth);
             ensureSpace(textLines.length * lineHeight + 6);
             setStyle(false, false);
             doc.setFontSize(10);
             doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-            doc.text(marker, markerX, y);
+            doc.text(marker, bulletX, y);
             for (let j = 0; j < textLines.length; j++) {
-              doc.text(textLines[j], bodyX, y + j * lineHeight);
+              doc.text(lines[j], textX, y + j * lineHeight);
             }
             y += textLines.length * lineHeight + 6;
           }
