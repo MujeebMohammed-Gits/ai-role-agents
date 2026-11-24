@@ -1,5 +1,5 @@
 ﻿import jsPDF from "jspdf";
-import "jspdf-autotable";
+import { autoTable } from "jspdf-autotable";
 import mermaid from "mermaid";
 
 const INDIGO_R = 79;
@@ -14,6 +14,9 @@ const MUTED_B = 139;
 const LINE_R = 203;
 const LINE_G = 213;
 const LINE_B = 225;
+const DARK_R = 15;
+const DARK_G = 23;
+const DARK_B = 42;
 const WATERMARK_TEXT = "AI Role Agents";
 const FOOTER_TEXT = "AI Role Agents built by Mujeeb Mohammed";
 
@@ -21,10 +24,10 @@ const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 const MARGIN_L = 46;
 const MARGIN_R = 46;
-const CONTENT_W = 503;
-const TOP_Y = 62;
+const CONTENT_W = PAGE_W - MARGIN_L - MARGIN_R;
+const TOP_Y = 56;
 const BOTTOM_LIMIT = PAGE_H - 48;
-const MAX_MERMAID_H = 340;
+const MAX_MERMAID_H = 320;
 
 export async function downloadConversationPdf(agent, conversation) {
   if (!agent || !conversation || conversation.length === 0) return;
@@ -32,8 +35,8 @@ export async function downloadConversationPdf(agent, conversation) {
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
   let y = TOP_Y;
 
-  const agentName = (agent && agent.title) || (agent && agent.role) || "Conversation";
-  const safeName = String(agentName).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+  const agentTitle = (agent && agent.title) || (agent && agent.role) || "Conversation";
+  const slug = String(agentTitle).replace(/[^a-z0-9]/gi, "_").toLowerCase();
   const dateStr = new Date().toLocaleDateString();
 
   const textWidth = (text, size) =>
@@ -50,24 +53,22 @@ export async function downloadConversationPdf(agent, conversation) {
     }
   };
 
-  const normalize = (s) =>
-    String(s)
-      .replace(/\u2014|\u2013/g, "-")
-      .replace(/\u2019|\u2018/g, "'")
-      .replace(/\u201c|\u201d/g, '"')
-      .replace(/\u2192/g, "->")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&nbsp;/g, " ");
-
-  const cleanText = (s) =>
-    normalize(s)
-      .replace(/\*\*/g, "")
-      .replace(/\*/g, "")
-      .replace(/[^\x20-\x7E]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+  const cleanTextForPdf = (str) => {
+    let s = String(str ?? "");
+    s = s.replace(/—|–/g, "-");
+    s = s.replace(/‘|’/g, "'");
+    s = s.replace(/“|”/g, '"');
+    s = s.replace(/→/g, "->");
+    s = s.replace(/•/g, "-");
+    s = s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "$1");
+    s = s.replace(/\*([^*]+)\*/g, "$1");
+    s = s.replace(/`([^`]+)`/g, "$1");
+    s = s.replace(/\[([^\]]*)\]\(([^)]*)\)/g, "$1 ($2)");
+    s = s.replace(/[^\x20-\x7E\n]/g, " ");
+    s = s.replace(/\s+/g, " ").trim();
+    return s;
+  };
 
   const drawSpeakerBanner = (label, isUser) => {
     ensureSpace(24);
@@ -85,6 +86,27 @@ export async function downloadConversationPdf(agent, conversation) {
   };
 
   let mermaidReady = false;
+  const renderMermaidFallback = (source) => {
+    const lines = String(source).split("\n").filter((l) => l.trim() !== "");
+    if (lines.length === 0) return;
+    ensureSpace(lines.length * 14 + 8);
+    setStyle(false, false);
+    doc.setFontSize(10);
+    doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
+    let yy = y;
+    for (const line of lines) {
+      const clean = cleanTextForPdf(line);
+      if (!clean) continue;
+      const wrapped = doc.splitTextToSize(clean, CONTENT_W);
+      for (const w of wrapped) {
+        doc.text(w, MARGIN_L, yy);
+        yy += 14;
+      }
+      yy += 6;
+    }
+    y = yy;
+  };
+
   const renderMermaidBlock = async (source) => {
     if (!mermaidReady) {
       try {
@@ -92,7 +114,7 @@ export async function downloadConversationPdf(agent, conversation) {
         mermaidReady = true;
       } catch (e) {
         console.warn("[exportChatPdf] mermaid.initialize failed", e);
-        return;
+        return renderMermaidFallback(source);
       }
     }
     let svgString = "";
@@ -101,12 +123,13 @@ export async function downloadConversationPdf(agent, conversation) {
       svgString = result.svg || "";
     } catch (e) {
       console.warn("[exportChatPdf] mermaid.render failed", e);
-      return;
+      return renderMermaidFallback(source);
     }
-    if (!svgString) return;
-    const vb = svgString.match(/viewBox="([^"]*)"/);
+    if (!svgString) return renderMermaidFallback(source);
+
     let vbW = 700;
     let vbH = 405;
+    const vb = svgString.match(/viewBox="([^"]*)"/);
     if (vb) {
       const parts = vb[1].trim().split(/\s+/);
       vbW = parseFloat(parts[2]) || 700;
@@ -116,9 +139,11 @@ export async function downloadConversationPdf(agent, conversation) {
       vbW = 700;
       vbH = 405;
     }
+
     const fit = Math.min(CONTENT_W / vbW, MAX_MERMAID_H / vbH);
     const imgW = vbW * fit;
     const imgH = vbH * fit;
+
     ensureSpace(imgH + 18);
     try {
       const img = new Image();
@@ -136,7 +161,7 @@ export async function downloadConversationPdf(agent, conversation) {
       doc.addImage(canvas.toDataURL("image/png"), "PNG", MARGIN_L, y, imgW, imgH);
     } catch (e) {
       console.warn("[exportChatPdf] mermaid rasterize failed", e);
-      return;
+      return renderMermaidFallback(source);
     }
     y += imgH + 18;
   };
@@ -220,7 +245,7 @@ export async function downloadConversationPdf(agent, conversation) {
   try {
     for (const message of conversation) {
       const isUser = message.role === "user";
-      const label = isUser ? "User" : agentName;
+      const label = isUser ? "User" : agentTitle;
       drawSpeakerBanner(label, isUser);
 
       const raw = message.content != null ? String(message.content) : "";
@@ -230,74 +255,80 @@ export async function downloadConversationPdf(agent, conversation) {
           await renderMermaidBlock(block.source);
         } else if (block.type === "table") {
           const tableLines = block.lines;
-          const headerRow = tableLines[0].replace(/^\s*\||\s*\|$/g, "").split("|").map((c) => cleanText(c));
+          const headerRow = tableLines[0].replace(/^\s*\||\s*\|$/g, "").split("|").map((c) => cleanTextForPdf(c));
           const rows = [];
           for (let r = 1; r < tableLines.length; r++) {
             const rowLine = tableLines[r];
             const trimmed = rowLine.replace(/^\s*\||\s*\|$/g, "");
             if (/^[:-\s|]+$/.test(trimmed)) continue;
-            rows.push(trimmed.split("|").map((c) => cleanText(c)));
+            rows.push(trimmed.split("|").map((c) => cleanTextForPdf(c)));
           }
           if (headerRow.length === 0 && rows.length === 0) continue;
           ensureSpace(40);
-          doc.autoTable({
+          autoTable(doc, {
             head: [headerRow],
             body: rows,
             startY: y,
-            margin: { left: MARGIN_L, right: MARGIN_R, top: 60, bottom: 48 },
+            margin: { left: MARGIN_L, right: MARGIN_R, top: 64, bottom: 50 },
             rowPageBreak: "avoid",
-            styles: { font: "helvetica", fontSize: 9.5, cellPadding: 6, textColor: [TEXT_R, TEXT_G, TEXT_B], lineColor: [LINE_R, LINE_G, LINE_B], lineWidth: 0.5 },
+            styles: { font: "helvetica", fontSize: 9.5, cellPadding: 6, textColor: [TEXT_R, TEXT_G, TEXT_B], lineColor: [LINE_R, LINE_G, LINE_B], lineWidth: 0.5, overflow: "linebreak" },
             headStyles: { fillColor: [INDIGO_R, INDIGO_G, INDIGO_B], textColor: [255, 255, 255], fontStyle: "bold" },
             alternateRowStyles: { fillColor: [248, 250, 252] },
           });
           y = doc.lastAutoTable.finalY + 14;
         } else if (block.type === "heading") {
-          const clean = cleanText(block.text);
+          const clean = cleanTextForPdf(block.text);
           if (!clean) continue;
           const size = block.depth === 1 ? 14 : block.depth === 2 ? 12.5 : 11;
-          const isIndigo = block.depth === 2;
-          ensureSpace(44);
+          const isIndigo = block.depth === 1 || block.depth === 2;
+          ensureSpace(46);
           setStyle(true, false);
           doc.setFontSize(size);
-          doc.setTextColor(isIndigo ? INDIGO_R : TEXT_R, isIndigo ? INDIGO_G : TEXT_G, isIndigo ? INDIGO_B : TEXT_B);
-          doc.text(clean, MARGIN_L, y);
-          y += size + 8;
+          doc.setTextColor(isIndigo ? INDIGO_R : DARK_R, isIndigo ? INDIGO_G : DARK_G, isIndigo ? INDIGO_B : DARK_B);
+          const wrapped = doc.splitTextToSize(clean, CONTENT_W);
+          let yy = y;
+          for (const w of wrapped) {
+            doc.text(w, MARGIN_L, yy);
+            yy += size + 4;
+          }
+          y = yy + 6;
           setStyle(false, false);
           doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
         } else if (block.type === "list") {
-          const indentX = MARGIN_L + 18;
+          const markerX = 50;
+          const bodyX = MARGIN_L + 18;
           const maxWidth = CONTENT_W - 18;
           let counter = 1;
           for (const item of block.items) {
-            const marker = block.ordered ? String(counter++) + "." : "\u2022";
-            const clean = cleanText(item);
+            const marker = block.ordered ? String(counter++) + "." : "•";
+            const clean = cleanTextForPdf(item);
             if (!clean) continue;
             const textLines = doc.splitTextToSize(clean, maxWidth);
             ensureSpace(textLines.length * 14 + 6);
             setStyle(false, false);
             doc.setFontSize(10);
             doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-            doc.text(marker, MARGIN_L, y);
+            doc.text(marker, markerX, y);
             for (let j = 0; j < textLines.length; j++) {
-              doc.text(textLines[j], indentX, y + j * 14);
+              doc.text(textLines[j], bodyX, y + j * 14);
             }
             y += textLines.length * 14 + 6;
           }
         } else if (block.type === "paragraph") {
           let text = block.text.replace(/\[([^\]]*)\]\(([^)]*)\)/g, ($0, title, url) => title + " (" + url + ")");
-          const clean = cleanText(text);
+          const clean = cleanTextForPdf(text);
           if (!clean) continue;
           const textLines = doc.splitTextToSize(clean, CONTENT_W);
-          ensureSpace(textLines.length * 14 + 8);
+          ensureSpace(textLines.length * 14.5 + 8);
           setStyle(false, false);
           doc.setFontSize(10);
           doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
           for (let j = 0; j < textLines.length; j++) {
-            doc.text(textLines[j], MARGIN_L, y + j * 14);
+            doc.text(textLines[j], MARGIN_L, y + j * 14.5);
           }
-          y += textLines.length * 14 + 8;
+          y += textLines.length * 14.5 + 8;
         } else if (block.type === "code") {
-          const clean = cleanText(block.source);
+          const clean = cleanTextForPdf(block.source);
           if (!clean) continue;
           const textLines = doc.splitTextToSize(clean, CONTENT_W);
           ensureSpace(textLines.length * 14 + 8);
@@ -313,30 +344,32 @@ export async function downloadConversationPdf(agent, conversation) {
       y += 10;
     }
 
-    const totalPages = doc.internal.getNumberOfPages();
+    const totalPages = doc.getNumberOfPages();
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
 
+      const softGState = doc.addGState({ opacity: 0.065 });
+      doc.setGState(softGState);
       doc.setFontSize(54);
-      setStyle(true, false);
-      doc.setTextColor(235, 238, 248);
-      doc.text(WATERMARK_TEXT, PAGE_W / 2, PAGE_H / 2, { angle: 32, align: "center", baseline: "middle" });
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(232, 235, 246);
+      doc.text(WATERMARK_TEXT, PAGE_W / 2, PAGE_H / 2 + 40, { angle: 32, align: "center", baseline: "middle" });
+      doc.setGState(doc.addGState({ opacity: 1 }));
 
       doc.setFillColor(INDIGO_R, INDIGO_G, INDIGO_B);
       doc.rect(0, 0, PAGE_W, 3, "F");
       doc.setFontSize(10);
       setStyle(true, false);
       doc.setTextColor(INDIGO_R, INDIGO_G, INDIGO_B);
-      doc.text("AI Role Agents portal", MARGIN_L, 30);
+      doc.text("AI Role Agents portal", MARGIN_L, 28);
       doc.setFontSize(9);
       setStyle(false, false);
       doc.setTextColor(MUTED_R, MUTED_G, MUTED_B);
-      const rightText = agentName + "  |  " + dateStr;
-      const rw = textWidth(rightText, 9);
-      doc.text(rightText, PAGE_W - MARGIN_R - rw, 30);
+      const rightText = agentTitle + "  |  " + dateStr;
+      doc.text(rightText, PAGE_W - MARGIN_R, 28, { align: "right" });
       doc.setDrawColor(LINE_R, LINE_G, LINE_B);
       doc.setLineWidth(0.4);
-      doc.line(MARGIN_L, 46, PAGE_W - MARGIN_R, 46);
+      doc.line(MARGIN_L, 42, PAGE_W - MARGIN_R, 42);
 
       const footerY = PAGE_H - 36;
       doc.setDrawColor(LINE_R, LINE_G, LINE_B);
@@ -345,17 +378,16 @@ export async function downloadConversationPdf(agent, conversation) {
       doc.setFontSize(9);
       setStyle(false, false);
       doc.setTextColor(MUTED_R, MUTED_G, MUTED_B);
-      doc.text("Page " + p + " of " + totalPages, MARGIN_L, PAGE_H - 24);
-      const credit = FOOTER_TEXT;
+      doc.text("Page " + p + " of " + totalPages, MARGIN_L, PAGE_H - 20);
       doc.setFont("helvetica", "italic");
       doc.setFontSize(9);
-      const cw = textWidth(credit, 9);
-      doc.text(credit, PAGE_W - MARGIN_R - cw, PAGE_H - 24);
+      doc.text(FOOTER_TEXT, PAGE_W - MARGIN_R, PAGE_H - 20, { align: "right" });
+      doc.setFont("helvetica", "normal");
     }
 
     setStyle(false, false);
     doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-    doc.save(safeName + "_conversation.pdf");
+    doc.save(`ai-role-agents-${slug}-chat.pdf`);
   } catch (err) {
     console.error("[downloadConversationPdf] vector-PDF path failed:", err);
     try {
@@ -375,7 +407,7 @@ export async function downloadConversationPdf(agent, conversation) {
       fallback.setFontSize(11);
       fallback.setTextColor(TEXT_R, TEXT_G, TEXT_B);
       for (const message of conversation) {
-        const role = message.role === "user" ? "User" : agentName;
+        const role = message.role === "user" ? "User" : agentTitle;
         fallback.text(role + ":", fMargin, fy);
         fy += 12;
         const lines = fallback.splitTextToSize(String(message.content || ""), CONTENT_W);
@@ -389,7 +421,7 @@ export async function downloadConversationPdf(agent, conversation) {
         }
         fy += 8;
       }
-      fallback.save(safeName + "_conversation.pdf");
+      fallback.save(`ai-role-agents-${slug}-chat.pdf`);
     } catch (fbErr) {
       console.error("[downloadConversationPdf] text fallback failed:", fbErr);
     }
