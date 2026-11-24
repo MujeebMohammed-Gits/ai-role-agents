@@ -248,8 +248,15 @@ class _OpenAILLMClient(LLMClient):
         temperature: float = 0.7,
         max_tokens: int = 6144,
     ) -> str:
-        chat = [{"role": "system", "content": system_prompt}] + messages
-        resp = await self._create_with_fallback(self._model, chat, max_tokens, stream=False)
+        extra_sys = "\n\n".join(
+            m.get("content", "") for m in messages
+            if m.get("role") == "system" and m.get("content", "") != system_prompt
+        )
+        merged_sys = f"{system_prompt}\n\n{extra_sys}" if extra_sys else system_prompt
+        full_messages = [{"role": "system", "content": merged_sys}] + [
+            m for m in messages if m.get("role") != "system"
+        ]
+        resp = await self._create_with_fallback(self._model, full_messages, max_tokens, stream=False)
         return resp.choices[0].message.content or ""
 
 

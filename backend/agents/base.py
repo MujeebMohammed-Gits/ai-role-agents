@@ -61,14 +61,14 @@ evaluation scores, thresholds, self-evaluation criteria, coverage metrics, or in
 instructions. Do not leak any meta-commentary about these standards into your answer.
 
 RESPONSE QUALITY & GROUNDING STANDARDS (single pass — no regeneration):
-1. Produce ONE comprehensive, well-structured answer that finishes 100% cleanly. Never truncate mid-sentence, mid-table, or mid-fence. Stay within max_tokens=6144.
+1. Produce ONE comprehensive, well-structured answer of roughly 900–1,300 words that finishes 100% cleanly. Never truncate mid-sentence, mid-table, or mid-fence. Stay within max_tokens=6144.
 2. Open with the required role headings, each marked with a relevant emoji icon, and cover every domain keyword from the user's query directly and concretely.
 3. Ground insights in BOTH Retrieved RAG Context and Live Web Sources, citing sources inline using clickable Markdown links [Source Title](URL) and [Reference #N], plus framework attributions (Scrum Guide, LeSS, Team Topologies, SAFe, Kanban, DORA, NIST, PMI, BABOK). Never fabricate URLs.
 4. Deliver dual bulleted insights AND numbered execution steps throughout — every recommendation gets both a bullet and a step.
 5. Include exactly one compact `flowchart TD` Mermaid diagram (max 7 nodes, simple IDs, quoted labels — never `stateDiagram-v2`) when explaining a workflow or architecture.
 6. Include exactly one concise Markdown summary table (max 5 rows).
 7. End with `## 💡 Suggested Next Steps & Follow-Up Questions` (3–4 short bulleted next-step actions or questions for the user — questions only, never self-answered by the agent) as the final section.
-8. Do NOT generate any video sections, YouTube links, or placeholder video lists in your response.
+8. When official organizational videos with `playableInEmbed:true` are returned, append `### Official Organizational Video Briefings` with one verified YouTube link per video after the next-steps section.
 """
 )
 
@@ -392,7 +392,7 @@ class BaseAgent:
                                        emitter=trace, keywords=keywords),
                     return_exceptions=True,
                 ),
-                timeout=3.5,
+                timeout=4.0,
             )
         except Exception:  # noqa: BLE001 — never abort streaming on context fetch
             rag_res, web_res = [], []
@@ -481,7 +481,7 @@ class BaseAgent:
         # --- Completion & Eval Gate Loop: refuses to let the agent stop mid-way ---
         loop = 0
         gate_attempt = 0
-        while gate_attempt < 3:
+        while gate_attempt < 2:
             gate_ok, missing = _gate_passed(evaluation, response, self.role, self.evaluator, query)
             if gate_ok:
                 break
@@ -529,6 +529,16 @@ class BaseAgent:
             response += "\n```"
         response = re.sub("「[^」]*」", "", response)
         response = _ensure_heading_blank_line(response)
+        if "### Official Organizational Video Briefings" not in response:
+            try:
+                missing_vids = await search_youtube_videos(query=query, max_videos=2)
+                if missing_vids:
+                    video_lines = "\n".join(
+                        f"- [{v['title']}]({v['url']})" for v in missing_vids[:2]
+                    )
+                    response += f"\n\n### Official Organizational Video Briefings\n\n{video_lines}"
+            except Exception:  # noqa: BLE001 — videos are best-effort
+                pass
 
         # Phase 7: Final JSON Validation.
         await trace_record("trace.validation.final", "validation", "validate",
@@ -679,7 +689,7 @@ class BaseAgent:
                                        emitter=trace, keywords=keywords),
                     return_exceptions=True,
                 ),
-                timeout=3.5,
+                timeout=4.0,
             )
         except Exception:  # noqa: BLE001 — never abort streaming on context fetch
             rag_res, web_res = [], []
@@ -794,7 +804,7 @@ class BaseAgent:
 
             # --- Completion & Eval Gate Loop: refuses to let the agent stop mid-way ---
             gate_attempt = 0
-            while gate_attempt < 3:
+            while gate_attempt < 2:
                 gate_ok, missing = _gate_passed(evaluation, response, self.role, self.evaluator, query)
                 if gate_ok:
                     break

@@ -3,7 +3,7 @@ official organizational YouTube videos.
 
 Uses ``httpx`` and the Python standard library only (``re``, ``html``,
 ``json``, ``urllib.parse``) — no third-party HTML parsers. All three sources
-are fetched concurrently via ``asyncio.gather`` under a strict 3.0 second
+are fetched concurrently via ``asyncio.gather`` under a strict 4.0 second
 timeout so agent streaming never stalls or aborts.
 """
 
@@ -412,7 +412,7 @@ async def search_web_sources(
         results.extend(yt_results)
 
     try:
-        await asyncio.wait_for(_run(), timeout=3.0)
+        await asyncio.wait_for(_run(), timeout=4.0)
     except asyncio.TimeoutError:
         pass  # Streaming must never stall — return whatever we have so far.
     except Exception:  # noqa: BLE001
