@@ -80,6 +80,78 @@ def _ensure_heading_blank_line(response: str) -> str:
     so renderers never show raw ``## `` hashes as plain text."""
     return re.sub(r"\n+(?=#{2,}\s)", "\n\n", response)
 
+
+def _normalize_response_markdown(text: str) -> str:
+    """Normalize an LLM-generated Markdown response before gating/evaluation.
+
+    Auto-closes any unclosed ```` ```mermaid ```` fence so a diagram can never
+    swallow the paragraphs or headings that follow it. If an opening
+    ```` ```mermaid ```` fence has no matching closing ```` ``` ```` before the
+    next Markdown heading (``\n## ``), caption (``\n*Diagram:``), or end of
+    string, a closing fence is inserted right after the last Mermaid node/edge
+    line (a line ending in ``-->`` or ``]``).
+    """
+    if not text:
+        return text
+
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    n = len(lines)
+    node_edge_re = re.compile(r"(-->\s*$|\]\s*$)")
+    heading_re = re.compile(r"\s*#{2,}\s")
+    caption_re = re.compile(r"\s*\*Diagram:")
+
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped.startswith("```mermaid"):
+            out.append(line)
+            i += 1
+            closed = False
+            last_node_edge = -1
+            block_end = i
+            while i < n:
+                cur = lines[i]
+                cstripped = cur.strip()
+                if cstripped == "```":
+                    out.append(cur)
+                    closed = True
+                    i += 1
+                    block_end = i
+                    break
+                out.append(cur)
+                if node_edge_re.search(cstripped):
+                    last_node_edge = len(out) - 1
+                if (
+                    i + 1 < n
+                    and (
+                        heading_re.match(lines[i + 1])
+                        or caption_re.match(lines[i + 1])
+                    )
+                ):
+                    block_end = i + 1
+                    break
+                i += 1
+            else:
+                block_end = n
+
+            if not closed:
+                if last_node_edge != -1:
+                    out.insert(last_node_edge + 1, "```")
+                    out.insert(last_node_edge + 2, "")
+                else:
+                    out.append("```")
+                    out.append("")
+            i = block_end
+            continue
+
+        out.append(line)
+        i += 1
+
+    return "\n".join(out)
+
 # Conversational filler stripped before extracting domain keywords.
 _KEYWORD_STOPWORDS: set[str] = {
     "about", "start", "give", "fully", "detailed", "plan", "how", "get",
@@ -135,7 +207,10 @@ def _gate_passed(evaluation, response: str, role: str, evaluator, query: str) ->
 
     # 3. Closing next-steps section present and clean terminal ending.
     if "## 💡 suggested next steps & follow-up questions" not in response_lower:
-        missing.append("## 💡 Suggested Next Steps & Follow-Up Questions section")
+        # If a "Suggested Next Steps" section already exists anywhere in the
+        # response (case-insensitive), never append a duplicate section.
+        if "suggested next steps" not in response_lower:
+            missing.append("## 💡 Suggested Next Steps & Follow-Up Questions section")
     stripped = (response or "").rstrip()
     if stripped and stripped[-1] not in ".!?)]\`":
         missing.append("terminal punctuation (response ends mid-sentence)")
@@ -383,6 +458,11 @@ class BaseAgent:
         response = gr.sanitized_response
         emit_log("info", "Guardrail evaluation complete",
                  {"passed": gr.passed, "violations": gr.violations})
+
+        # Normalize the assembled response before gating/evaluation: close any
+        # unclosed ```mermaid fence so a diagram cannot swallow the following
+        # sections, and keep structural fences balanced.
+        response = _normalize_response_markdown(response)
 
         # Phase 5/6: Evaluation (single pass — no response regeneration).
         try:
@@ -698,6 +778,11 @@ class BaseAgent:
             "event": "phase",
             "data": {"phase": "guardrail", "status": "complete", "passed": gr.passed},
         }
+
+        # Normalize the assembled response before gating/evaluation: close any
+        # unclosed ```mermaid fence so a diagram cannot swallow the following
+        # sections, and keep structural fences balanced.
+        response = _normalize_response_markdown(response)
 
         # Phase 5/6: Evaluation (single pass — no response regeneration).
         yield {"event": "phase", "data": {"phase": "evaluation", "status": "start"}}

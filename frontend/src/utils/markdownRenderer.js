@@ -76,6 +76,26 @@ function sanitizeMermaid(source) {
 export function renderMarkdown(text) {
   if (!text) return '';
 
+  // Auto-close an unclosed ```mermaid block so a diagram never swallows the
+  // rest of the chat message (e.g. during live SSE streaming into a <pre>).
+  if ((text.match(/```/g) || []).length % 2 === 1) {
+    text = text.replace(
+      /(\n```mermaid[\s\S]*?)(?=\n## |\n\*Diagram:|$)/g,
+      (block) => {
+        const firstFence = block.indexOf("```");
+        if (block.indexOf("```", firstFence + 1) !== -1) return block;
+        const lines = block.split("\n");
+        let lastEdge = -1;
+        for (let k = lines.length - 1; k >= 0; k--) {
+          if (/-->\s*$|\]$/.test(lines[k].trim())) { lastEdge = k; break; }
+        }
+        const insertAt = lastEdge !== -1 ? lastEdge : lines.length - 1;
+        lines.splice(insertAt + 1, 0, "```", "");
+        return lines.join("\n");
+      }
+    );
+  }
+
   // Ensure Markdown headings always start on a fresh line (blank line before
   // `##` / `###`) so they render as headings instead of raw `##` text, in the
   // chat UI and in exported PDFs alike.

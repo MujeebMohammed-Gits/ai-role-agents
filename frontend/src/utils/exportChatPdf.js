@@ -57,6 +57,30 @@ const sanitizeText = (str) => {
   return s;
 };
 
+// Auto-close an unclosed ```mermaid block so the diagram renders as a crisp
+// image instead of literal ```mermaid text, and following headings (e.g.
+// ## 💡 Suggested Next Steps & Follow-Up Questions) parse as styled headings
+// rather than being swallowed by the open fence.
+const closeUnclosedMermaid = (text) => {
+  if (!text) return text;
+  if ((text.match(/```/g) || []).length % 2 === 0) return text;
+  return text.replace(
+    /(\n```mermaid[\s\S]*?)(?=\n## |\n\*Diagram:|$)/g,
+    (block) => {
+      const firstFence = block.indexOf("```");
+      if (block.indexOf("```", firstFence + 1) !== -1) return block;
+      const lines = block.split("\n");
+      let lastEdge = -1;
+      for (let k = lines.length - 1; k >= 0; k--) {
+        if (/-->\s*$|\]$/.test(lines[k].trim())) { lastEdge = k; break; }
+      }
+      const insertAt = lastEdge !== -1 ? lastEdge : lines.length - 1;
+      lines.splice(insertAt + 1, 0, "```", "");
+      return lines.join("\n");
+    }
+  );
+};
+
 // True background watermark drawn underneath all text and tables on a page.
 // Uses real PDF transparency (GState opacity 0.07) so it never washes out
 // foreground content.
@@ -291,7 +315,7 @@ export async function buildConversationPdf(agent, conversation) {
   };
 
   const parseBlocks = (raw) => {
-    const normalized = String(raw).replace(/([^\n])\n(#{1,4}\s+)/g, '$1\n\n$2');
+    const normalized = closeUnclosedMermaid(String(raw)).replace(/([^\n])\n(#{1,4}\s+)/g, '$1\n\n$2');
     const lines = normalized.split('\n');
     const blocks = [];
     let i = 0;
@@ -454,24 +478,31 @@ export async function buildConversationPdf(agent, conversation) {
           setStyle(false, false);
           doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
         } else if (block.type === 'list') {
-          const markerX = MARGIN_X + 4;
-          const bodyX = MARGIN_X + 20;
+          const bulletX = MARGIN_X + 4;
+          const textX = MARGIN_X + 20;
           const maxWidth = CONTENT_WIDTH - 20; // 483 pt
           const lineHeight = 14.5;
           let counter = 1;
           for (const item of block.items) {
             const marker = block.ordered ? String(counter++) + '.' : '•';
-            const clean = sanitizeText(item);
-            const textLines = doc.splitTextToSize(clean, maxWidth);
-            ensureSpace(textLines.length * lineHeight + 6);
+            let itemText = sanitizeText(item);
+            // Avoid double-bullets like "• 1. Rapid organisational assessment"
+            // inside a bullet list; keep the numbering only for ordered lists.
+            if (!block.ordered) {
+              itemText = itemText.replace(/^\d+[.)]\s+/, '');
+            }
+            const lines = doc.splitTextToSize(itemText, maxWidth);
+            ensureSpace(lines.length * lineHeight + 6);
             setStyle(false, false);
             doc.setFontSize(10);
             doc.setTextColor(TEXT_R, TEXT_G, TEXT_B);
-            doc.text(marker, markerX, y);
-            for (let j = 0; j < textLines.length; j++) {
-              doc.text(textLines[j], bodyX, y + j * lineHeight);
+            // Draw the marker at the bullet column and every wrapped line at
+            // the same text column so line 1 aligns flush-left with lines 2+.
+            doc.text(marker, bulletX, y);
+            for (let j = 0; j < lines.length; j++) {
+              doc.text(lines[j], textX, y + j * lineHeight);
             }
-            y += textLines.length * lineHeight + 6;
+            y += lines.length * lineHeight + 6;
           }
         } else if (block.type === 'hr') {
           ensureSpace(12);
