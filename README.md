@@ -4,10 +4,14 @@
 
 **An Enterprise Multi-Agent AI Advisory Platform with Grounded RAG, Real-Time Glass-Box Observability, Automated Evals, and Interactive Workflow Diagrams**
 
+<br/>
+
 [![Live Demo](https://img.shields.io/badge/live%20demo-vercel-black?logo=vercel)](https://ai-role-agents.vercel.app)
 [![Backend API](https://img.shields.io/badge/backend-FastAPI-009688)](https://onrender.com)
 [![Vector DB](https://img.shields.io/badge/vector%20DB-Qdrant-252945)](https://qdrant.io)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)]
+
+<br/>
 
 Built by **Mujeeb Mohammed** • [Try the Live Platform](https://ai-role-agents.vercel.app) • [GitHub Repository](https://github.com)
 
@@ -15,21 +19,34 @@ Built by **Mujeeb Mohammed** • [Try the Live Platform](https://ai-role-agents.
 
 ---
 
-## Live Portal Snapshot & Narrated Walkthrough Video
+## Portal Preview & End-to-End Walkthrough
 
 <div align="center">
-  <img src="docs/media/portal-snapshot.png" alt="AI Role Agents Portal — Live Snapshot" width="700" />
-</div>
 
-<br /><br />
+![AI Role Agents Portal — All 12 Specialist Agents & Live Response](assets/portal-snapshot.png)
 
-<div align="center">
-  <a href="docs/media/ai-role-agents-demo.mp4">
-    <img src="docs/media/portal-walkthrough.gif" alt="AI Role Agents — End-to-End Walkthrough Preview" width="460" />
-  </a>
-  <p><b>Watch the full AI-narrated walkthrough:</b>
-    <a href="docs/media/ai-role-agents-demo.mp4">ai-role-agents-demo.mp4</a> (≈1 min 12 s, edge-tts voiceover)
-  </p>
+<br/><br/>
+
+<!--
+  assets/ is listed in .gitignore and is NOT committed to GitHub.
+  To render these files inline on GitHub, drag and drop
+  portal-snapshot.png and ai-role-agents-Coach-journey.mp4 into GitHub's
+  web editor for README.md. GitHub replaces the local paths with
+  https://github.com/user-attachments/assets/... CDN links, so both
+  the snapshot and the walkthrough video render inline without
+  committing assets/ to the repository.
+-->
+
+<br/>
+
+<a href="assets/ai-role-agents-Coach-journey.mp4">
+  <img src="assets/portal-snapshot.png" alt="AI Role Agents — End-to-End Walkthrough Preview" width="460" />
+</a>
+
+<p><b>Watch the full AI-narrated walkthrough:</b>
+  <a href="assets/ai-role-agents-Coach-journey.mp4">ai-role-agents-Coach-journey.mp4</a> (≈1 min 12 s, edge-tts voiceover)
+</p>
+
 </div>
 
 <br />
@@ -45,7 +62,7 @@ Built by **Mujeeb Mohammed** • [Try the Live Platform](https://ai-role-agents.
 
 </div>
 
-The narrated walkthrough tours the live AI Role Agents portal — the 12 Specialist Role Agents gallery, the top-bar **Download PDF**, **Live Log**, and **Trace Events** drawers — and runs an end-to-end workflow using the **Enterprise Agile Coach** agent with the prompt *"Design a 2-week Healthcare Digital Transformation pilot sprint plan with workflows and metrics"*. It captures real-time SSE token streaming, multi-source RAG context retrieval, interactive Mermaid workflow-diagram zooming, the `Eval 90+ (valid)` quality badge, and a branded vector PDF export.
+The narrated walkthrough tours the live AI Role Agents portal — the 12 Specialist Role Agents gallery, the top-bar **Download PDF**, **Live Log**, and **Trace Events** drawers — and runs an end-to-end workflow using the **Enterprise Agile Coach** agent with the prompt "Design a 2-week Healthcare Digital Transformation pilot sprint plan with workflows and metrics". It captures real-time SSE token streaming, multi-source RAG context retrieval, interactive Mermaid workflow-diagram zooming, the `Eval 90+ (valid)` quality badge, and a branded vector PDF export.
 
 ---
 
@@ -54,25 +71,6 @@ The narrated walkthrough tours the live AI Role Agents portal — the 12 Special
 Generic AI assistants rely on one-size-fits-all system prompts that lack domain boundaries, verifiable citations, or quality controls. **AI Role Agents** solves this by orchestrating **12 specialized enterprise personas**—each grounded in **19,712 indexed domain knowledge chunks**, governed by automated guardrails and self-critique evaluations, and streamed live with full event-level telemetry.
 
 > **Live Production Deployment:** Experience all 12 specialist agents instantly at **[ai-role-agents.vercel.app](https://ai-role-agents.vercel.app)**.
-
----
-
-## The 12 Domain-Specialist Agents
-
-| Domain Pillar | Specialist Role Agent | Core Accountability & Focus Areas |
-| :--- | :--- | :--- |
-| **Delivery & Strategy** | **Delivery Management** | End-to-end delivery roadmaps, milestone governance, dependency & risk mitigation |
-| **Delivery & Strategy** | **Programme Manager** | Multi-workstream alignment, executive reporting, benefits realization |
-| **Delivery & Strategy** | **Management Consultant** | Operating model design, strategic transformation, executive advisory |
-| **Agile & Scrum** | **Enterprise Agile Coach** | Scaled agile adoption, organizational agility, leadership coaching |
-| **Agile & Scrum** | **Scrum Master** | Sprint ceremonies, empirical flow, team self-organization, impediment removal |
-| **Product & Discovery** | **Product Manager** | Product vision, outcome metrics, go-to-market strategy, prioritization |
-| **Product & Discovery** | **Product Owner** | Backlog refinement, user story slicing, value maximization, acceptance criteria |
-| **Product & Discovery** | **Business Analyst** | Requirements engineering, process modelling, gap & impact analysis |
-| **Product & Discovery** | **User Research** | Discovery interviews, usability synthesis, evidence-based user insights |
-| **Cloud & Platform** | **DevOps Engineer** | CI/CD pipelines, infrastructure-as-code, release automation |
-| **Cloud & Platform** | **Site Reliability Engineer (SRE)** | SLIs/SLOs, error budgets, incident response, chaos & resilience engineering |
-| **Cloud & Platform** | **Platform Engineering** | Internal developer platforms (IDPs), golden paths, developer experience |
 
 ---
 
@@ -122,8 +120,7 @@ ai-role-agents/
 │   │   ├── utils/              # Markdown + Mermaid sanitizer, zoom toolbar, and log formatters
 │   │   └── App.jsx             # Light Studio interface, Agent Gallery, and Conversation Thread
 │   └── vite.config.js          # Dev server & non-buffering SSE proxy configuration
-├── source-docs/                # Local domain reference documents (excluded from Git)
-├── docs/media/                 # portal-snapshot.png, ai-role-agents-demo.mp4, portal-walkthrough.gif
+├── assets/                     # portal-snapshot.png, ai-role-agents-Coach-journey.mp4 (excluded from Git via .gitignore)
 ├── Dockerfile                  # Multi-stage production container build
 ├── start.sh                    # Container startup hydration script
 └── README.md
@@ -134,6 +131,7 @@ ai-role-agents/
 ## Quick Start (Local Development)
 
 ### Prerequisites
+
 - **Python 3.11+**
 - **Node.js 18+**
 - An **NVIDIA NIM**, **OpenAI**, or **Anthropic**-compatible API key (or run with `LLM_PROVIDER=mock` for zero-key testing)
@@ -185,4 +183,24 @@ Open **`http://localhost:5173`** in your browser to interact with all 12 AI Role
 
 ## License
 
-MIT License — Copyright (c) 2026 **Mujeeb Mohammed**
+MIT License
+
+Copyright (c) 2026 Mujeeb Mohammed
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

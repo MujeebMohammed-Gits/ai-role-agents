@@ -8,6 +8,14 @@ node_modules/
 frontend/dist/
 .DS_Store
 
+docs/
+assets/
+LICENSE
+debug_yt.py
+test_eval_tmp.py
+test_youtube.py
+verify_channels.py
+
 # Local Windows launcher script
 run_local.bat
 
@@ -21,3 +29,4 @@ chroma/
 
 *.tar.gz
 backend/data/chroma/
+
