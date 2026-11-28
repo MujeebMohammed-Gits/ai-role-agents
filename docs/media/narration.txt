@@ -1,0 +1,15 @@
+﻿Welcome to the AI Role Agents portal - an enterprise multi-agent AI advisory platform.
+
+The home screen displays the AI Role Agents header with the portal title and the credit, AI Role Agents built by Mujeeb Mohammed. At the top, the Choose Your Agent section invites you to select from twelve specialist role agents spanning delivery and strategy, agile and scrum, product and discovery, and cloud and platform.
+
+The top toolbar provides three key controls: Download PDF, to export a branded, watermarked vector PDF of any active conversation; Live Log, to view real-time processing telemetry; and Trace Events, to monitor guardrail, critique, and validation events as they occur.
+
+In this walkthrough, we select the Enterprise Agile Coach agent and submit an end-to-end prompt: Design a two-week Healthcare Digital Transformation pilot sprint plan with workflows and metrics.
+
+As the agent responds, you will see server-sent events stream token by token in real time. The response is grounded in multi-source retrieval-augmented generation, combining Qdrant Cloud vector search, live OpenAlex peer-reviewed journals, and official organizational videos from Scrum.org, SAFe, CNCF, and more - all filtered and ranked by the self-evaluator before generation.
+
+An interactive Mermaid workflow diagram visualizes the sprint plan, with zoom controls to explore the workflow in detail. An automated five-stage evaluation scores relevance, grounding, completeness, formatting, and role compliance, displaying an Eval ninety-plus, valid quality badge.
+
+Finally, clicking Download PDF exports a branded vector PDF with selectable text, high-DPI diagrams, a page footer, and a soft AI Role Agents watermark.
+
+This is AI Role Agents: grounded, governed, and production-ready enterprise AI.

@@ -15,11 +15,23 @@ Built by **Mujeeb Mohammed** • [Try the Live Platform](https://ai-role-agents.
 
 ---
 
+## Live Portal Snapshot & Narrated Walkthrough Video
+
+![AI Role Agents Portal Snapshot](docs/media/portal-snapshot.png)
+
+![End-to-End Walkthrough Preview](docs/media/portal-walkthrough.gif)
+
+**[Watch Full AI-Narrated End-to-End Walkthrough Video (MP4)](docs/media/ai-role-agents-demo.mp4)**
+
+The narrated walkthrough tours the live AI Role Agents portal — the 12 Specialist Role Agents gallery, the top-bar **Download PDF**, **Live Log**, and **Trace Events** drawers — and runs an end-to-end workflow using the **Enterprise Agile Coach** agent with the prompt *"Design a 2-week Healthcare Digital Transformation pilot sprint plan with workflows and metrics"*. It captures real-time SSE token streaming, multi-source RAG context retrieval, interactive Mermaid workflow-diagram zooming, the `Eval 90+ (valid)` quality badge, and a branded vector PDF export.
+
+---
+
 ## Why AI Role Agents?
 
 Generic AI assistants rely on one-size-fits-all system prompts that lack domain boundaries, verifiable citations, or quality controls. **AI Role Agents** solves this by orchestrating **12 specialized enterprise personas**—each grounded in **19,712 indexed domain knowledge chunks**, governed by automated guardrails and self-critique evaluations, and streamed live with full event-level telemetry.
 
-> **Live Production Deployment:** Experience all 12 specialist agents instantly at **[ai-role-agents.vercel.app](https://vercel.app)**.
+> **Live Production Deployment:** Experience all 12 specialist agents instantly at **[ai-role-agents.vercel.app](https://ai-role-agents.vercel.app)**.
 
 ---
 
@@ -44,19 +56,13 @@ Generic AI assistants rely on one-size-fits-all system prompts that lack domain 
 
 ## Key Platform Capabilities
 
-- **Dual-Mode Production RAG (19,712+ Knowledge Chunks):**
-  - **Cloud Mode:** Queries a **Qdrant Cloud** vector cluster (`384-dim` cosine similarity) paired with serverless **Hugging Face Inference** (`sentence-transformers/all-MiniLM-L6-v2`) for sub-second retrieval under 80 MB RAM.
-  - **Local Mode:** Seamless fallback to persistent **ChromaDB** + local `SentenceTransformers` for offline development.
-  - **Privacy-Safe Citations:** Grounds every response with numbered context references (`Reference #1`, `Reference #2`) and framework attributions.
-- **Glass-Box Real-Time Observability:**
-  - **Server-Sent Events (SSE):** Progressive token-by-token streaming from FastAPI to the React Light Studio UI.
-  - **Live Processing Log & Trace Events Drawers:** Real-time WebSocket + SSE telemetry tracking `trace.rag.retrieve`, `trace.agent.thought`, `trace.guardrail.evaluate`, `trace.critique.generate`, and `trace.validation.final`.
-- **Automated Guardrails, Self-Critique & Live Evals:**
-  - Every generated response is scored against configurable quality thresholds (`EVALUATION_THRESHOLD`), triggering self-correction loops when needed and displaying live `Eval` validation badges.
-- **Interactive Mermaid.js Workflow Diagrams:**
-  - Automatic syntax sanitization and rendering of `flowchart`, `sequenceDiagram`, `gantt`, and `stateDiagram` blocks inside a scrollable viewport with **`-` / `100%` / `+` / `Reset`** zoom controls.
-- **Multi-Model Inference Routing:**
-  - Supports **NVIDIA NIM** (`nvidia/nemotron-3.5-lightning-30b-a3b`, `meta/llama-3.3-70b-instruct`), **OpenAI-compatible**, and **Anthropic-compatible** endpoints, plus a deterministic key-free mock mode.
+- **Multi-Source Production RAG & Pre-Generation Context Evaluation:** Combines **Qdrant Cloud** (`19,712+` 384-dim vectors + FastEmbed `all-MiniLM-L6-v2`) / local **ChromaDB**, live **OpenAlex** peer-reviewed academic journals, authoritative organizational articles, and **oEmbed + `playableInEmbed:true` verified Official Organizational Videos** (Scrum.org, Scaled Agile/SAFe, CNCF, USENIX, IIBA, Nielsen Norman Group, Atlassian, Google Cloud Tech, NVIDIA, GOTO, Microsoft Developer), filtered and ranked by `SelfEvaluator.filter_and_rank_context` before generation.
+- **Continuous Completion & `Eval > 87` (`valid`) Quality Gate:** Automated 5-stage evaluation (`relevance`, `grounding`, `completeness`, `formatting`, `role_compliance`), query-keyword analysis, raw citation artifact sanitization, and structured next-step follow-up recommendations.
+- **Production-Ready Vector PDF Export & Session Guard:** Top-bar **Download PDF** button (enabled whenever an active agent conversation exists) generating 100% selectable native `jsPDF` + `autoTable` vector PDFs with high-DPI Mermaid diagrams, branded header/footer (`AI Role Agents portal`, `Page X of Y`, *`AI Role Agents built by Mujeeb Mohammed`*), soft `"AI Role Agents"` background watermark, and a confirmation prompt before switching agents or refreshing an active chat.
+- **Production-Only Multi-Model Inference Routing:** Real-time **NVIDIA NIM** (`https://integrate.api.nvidia.com/v1` with automatic `/v1/models` live model discovery fallback), **OpenAI-compatible**, and **Anthropic-compatible** routing (synthetic mock fallbacks removed in production).
+- **Glass-Box Real-Time Observability:** Server-Sent Events (SSE) progressive token-by-token streaming from FastAPI to the React Light Studio UI, plus Live Processing Log & Trace Events drawers tracking `trace.rag.retrieve`, `trace.agent.thought`, `trace.guardrail.evaluate`, `trace.critique.generate`, and `trace.validation.final`.
+- **Interactive Mermaid.js Workflow Diagrams:** Automatic syntax sanitization and rendering of `flowchart`, `sequenceDiagram`, `gantt`, and `stateDiagram` blocks inside a scrollable viewport with `-` / `100%` / `+` / `Reset` zoom controls.
+- **Privacy-Safe Citations:** Every response is grounded with numbered context references (`Reference #1`, `Reference #2`) and framework attributions.
 
 ---
 
@@ -75,14 +81,6 @@ flowchart LR
 
 ---
 
-## Tech Stack
-
-- **Frontend:** React 18, Vite, Tailwind CSS, Marked, DOMPurify, Mermaid.js, Lucide Icons *(Deployed on **Vercel**)*
-- **Backend:** Python 3.11+, FastAPI, Uvicorn, AsyncIO, HTTPX, Pydantic *(Deployed on **Render** with 24/7 **UptimeRobot** monitoring)*
-- **AI & Vector Layer:** NVIDIA NIM, Hugging Face Inference API, Qdrant Cloud, ChromaDB, SentenceTransformers
-
----
-
 ## Project Structure
 
 ```text
@@ -91,18 +89,19 @@ ai-role-agents/
 │   ├── agents/                 # BaseAgent, Orchestrator, and 12 specialist role definitions
 │   ├── api/                    # FastAPI routes, SSE streaming, WebSocket trace/log bridges, memory
 │   ├── config/                 # Environment-driven configuration & evaluation thresholds
-│   ├── core/                   # Multi-provider LLM client, hybrid Qdrant/Chroma RAG, guardrails, evaluator
+│   ├── core/                   # Multi-provider LLM client, hybrid Qdrant/Chroma RAG, guardrails, evaluator, web_research.py
 │   ├── main.py                 # FastAPI application entry point
 │   ├── requirements.txt        # Full local dependencies (includes ChromaDB & SentenceTransformers)
 │   └── requirements-cloud.txt  # Lightweight cloud dependencies (< 80 MB RAM footprint)
 ├── frontend/
 │   ├── src/
 │   │   ├── hooks/              # Auto-reconnecting WebSocket hook for live logs & trace events
-│   │   ├── services/           # REST & streaming API client
+│   │   ├── services/           # REST & streaming API client, exportChatPdf.js vector PDF export
 │   │   ├── utils/              # Markdown + Mermaid sanitizer, zoom toolbar, and log formatters
 │   │   └── App.jsx             # Light Studio interface, Agent Gallery, and Conversation Thread
 │   └── vite.config.js          # Dev server & non-buffering SSE proxy configuration
 ├── source-docs/                # Local domain reference documents (excluded from Git)
+├── docs/media/                 # portal-snapshot.png, ai-role-agents-demo.mp4, portal-walkthrough.gif
 ├── Dockerfile                  # Multi-stage production container build
 ├── start.sh                    # Container startup hydration script
 └── README.md
@@ -120,8 +119,8 @@ ai-role-agents/
 ### 1. Configure Environment Variables
 
 ```bash
-LLM_PROVIDER=openai
-OPENAI_BASE_URL=https://nvidia.com
+LLM_PROVIDER=nvidia
+OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
 OPENAI_API_KEY=your_nvapi_key
 LLM_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b
 
