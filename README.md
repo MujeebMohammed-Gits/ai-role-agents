@@ -4,10 +4,10 @@
 
 **An Enterprise Multi-Agent AI Advisory Platform with Grounded RAG, Real-Time Glass-Box Observability, Automated Evals, and Interactive Workflow Diagrams**
 
-[![Live Demo](https://shields.io)](https://vercel.app)
-[![Backend API](https://shields.io)](https://onrender.com)
-[![Vector DB](https://shields.io)](https://qdrant.io)
-[![License: MIT](https://shields.io)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/live%20demo-vercel-black?logo=vercel)](https://ai-role-agents.vercel.app)
+[![Backend API](https://img.shields.io/badge/backend-FastAPI-009688)](https://onrender.com)
+[![Vector DB](https://img.shields.io/badge/vector%20DB-Qdrant-252945)](https://qdrant.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Built by **Mujeeb Mohammed** • [Try the Live Platform](https://ai-role-agents.vercel.app) • [GitHub Repository](https://github.com)
 
@@ -17,11 +17,33 @@ Built by **Mujeeb Mohammed** • [Try the Live Platform](https://ai-role-agents.
 
 ## Live Portal Snapshot & Narrated Walkthrough Video
 
-![AI Role Agents Portal Snapshot](docs/media/portal-snapshot.png)
+<div align="center">
+  <img src="docs/media/portal-snapshot.png" alt="AI Role Agents Portal — Live Snapshot" width="700" />
+</div>
 
-![End-to-End Walkthrough Preview](docs/media/portal-walkthrough.gif)
+<br /><br />
 
-**[Watch Full AI-Narrated End-to-End Walkthrough Video (MP4)](docs/media/ai-role-agents-demo.mp4)**
+<div align="center">
+  <a href="docs/media/ai-role-agents-demo.mp4">
+    <img src="docs/media/portal-walkthrough.gif" alt="AI Role Agents — End-to-End Walkthrough Preview" width="460" />
+  </a>
+  <p><b>Watch the full AI-narrated walkthrough:</b>
+    <a href="docs/media/ai-role-agents-demo.mp4">ai-role-agents-demo.mp4</a> (≈1 min 12 s, edge-tts voiceover)
+  </p>
+</div>
+
+<br />
+
+<div align="center">
+
+| Chapter | Time | Scene |
+|:--------|-----:|:------|
+| Scene 1 — Portal Overview & 12 Specialist Role Agents | 0:00 | Light Studio gallery, top-bar controls |
+| Scene 2 — Enterprise Agile Coach: end-to-end workflow | 0:19 | Healthcare Digital Transformation pilot, SSE streaming, Trace Events & Live Log |
+| Scene 3 — Mermaid diagrams & Eval 90+ guardrails | 0:37 | Zoom controls, quality badge, Context drawer, official videos |
+| Scene 4 — Vector PDF export & session protection | 0:53 | Download PDF export, save-before-switch confirmation |
+
+</div>
 
 The narrated walkthrough tours the live AI Role Agents portal — the 12 Specialist Role Agents gallery, the top-bar **Download PDF**, **Live Log**, and **Trace Events** drawers — and runs an end-to-end workflow using the **Enterprise Agile Coach** agent with the prompt *"Design a 2-week Healthcare Digital Transformation pilot sprint plan with workflows and metrics"*. It captures real-time SSE token streaming, multi-source RAG context retrieval, interactive Mermaid workflow-diagram zooming, the `Eval 90+ (valid)` quality badge, and a branded vector PDF export.
 
